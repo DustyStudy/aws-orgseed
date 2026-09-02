@@ -1,0 +1,64 @@
+name: validate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  cfn-lint:
+    name: cfn-lint (bootstrap templates)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install cfn-lint
+      - run: cfn-lint bootstrap/*.yaml
+
+  terraform-lint:
+    name: terraform fmt / validate / tflint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.0"
+      - run: terraform fmt -check -recursive modules/
+      - name: terraform validate (each module)
+        run: |
+          for dir in modules/*/; do
+            echo "== $dir =="
+            (cd "$dir" && terraform init -backend=false && terraform validate)
+          done
+      - uses: terraform-linters/setup-tflint@v4
+      - run: |
+          for dir in modules/*/; do
+            (cd "$dir" && tflint)
+          done
+
+  checkov:
+    name: checkov (CFN + Terraform SAST)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: bridgecrewio/checkov-action@master
+        with:
+          directory: .
+          framework: cloudformation,terraform
+          quiet: true
+          soft_fail: false
+
+  python-lint-and-sast:
+    name: ruff + bandit (cli/)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install ruff bandit
+      - run: ruff check cli/
+      - run: bandit -r cli/ -ll

@@ -1,0 +1,22 @@
+# cli/orgs.yaml
+# Declarative list of orgs to seed. Edit this file, then run:
+#   python cli/seed.py --config cli/orgs.yaml
+#
+# See examples/multi-org-example.yaml for a fuller annotated example.
+
+hub_account_id: "111111111111"
+hub_role_arn: "arn:aws:iam::111111111111:role/orgseed-hub"
+github_repo: "DustyStudy/aws-orgseed"
+
+orgs:
+  - alias: acme-commercial
+    management_account_id: "222222222222"
+    partition: aws
+    regions:
+      - us-east-1
+    seeding_admin_role_name: OrgSeedAdmin
+    ci_role_name: orgseed-ci
+    state_bucket: tfstate-acme-commercial
+    use_lock_table: false
+    lock_table: ""
+    ci_trust_ref: "ref:refs/heads/main"

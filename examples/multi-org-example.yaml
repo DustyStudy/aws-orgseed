@@ -1,0 +1,44 @@
+# examples/multi-org-example.yaml
+# Copy this to cli/orgs.yaml and edit for your environment.
+
+hub_account_id: "111111111111"
+hub_role_arn: "arn:aws:iam::111111111111:role/orgseed-hub"
+github_repo: "DustyStudy/aws-orgseed"
+
+orgs:
+  - alias: acme-commercial
+    management_account_id: "222222222222"
+    partition: aws
+    regions:
+      - us-east-1
+      - us-west-2
+    seeding_admin_role_name: OrgSeedAdmin
+    ci_role_name: orgseed-ci
+    state_bucket: tfstate-acme-commercial
+    use_lock_table: false
+    lock_table: ""
+    ci_trust_ref: "ref:refs/heads/main"
+
+  - alias: acme-govcloud
+    management_account_id: "333333333333"
+    partition: aws-us-gov
+    regions:
+      - us-gov-west-1
+    seeding_admin_role_name: OrgSeedAdmin
+    ci_role_name: orgseed-ci
+    state_bucket: tfstate-acme-govcloud
+    use_lock_table: true
+    lock_table: tflock-acme-govcloud
+    ci_trust_ref: "environment:prod"
+
+  - alias: beta-co-commercial
+    management_account_id: "444444444444"
+    partition: aws
+    regions:
+      - eu-west-1
+    seeding_admin_role_name: OrgSeedAdmin
+    ci_role_name: orgseed-ci
+    state_bucket: tfstate-beta-co-commercial
+    use_lock_table: false
+    lock_table: ""
+    ci_trust_ref: "ref:refs/heads/main"

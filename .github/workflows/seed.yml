@@ -1,0 +1,38 @@
+name: seed
+
+on:
+  workflow_dispatch:
+    inputs:
+      org:
+        description: "Limit to a single org alias (blank = all orgs in cli/orgs.yaml)"
+        required: false
+        default: ""
+
+permissions:
+  id-token: write   # required for OIDC -- do not add contents: write here
+  contents: read
+
+jobs:
+  seed:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (assumes orgseed-hub via OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.ORGSEED_HUB_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r cli/requirements.txt
+
+      - name: Run seed.py
+        run: |
+          if [ -n "${{ inputs.org }}" ]; then
+            python cli/seed.py --config cli/orgs.yaml --org "${{ inputs.org }}"
+          else
+            python cli/seed.py --config cli/orgs.yaml
+          fi

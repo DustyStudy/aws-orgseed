@@ -1,0 +1,80 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  aws-orgseed: per-org bootstrap roles. Deploy into EACH target org's
+  management account using initial admin/break-glass access. Creates the
+  OrgSeedAdmin role (bootstrap only) and TerraformCI role (day-to-day),
+  both trusting only the hub seeder role — this account never holds an
+  OIDC provider itself.
+
+Parameters:
+  HubRoleArn:
+    Type: String
+    Description: ARN of the hub seeder role (output of oidc-provider.yaml)
+  OrgAlias:
+    Type: String
+    Description: Short name for this org, used in resource naming (e.g. acme-commercial)
+  SeedingAdminRoleName:
+    Type: String
+    Default: OrgSeedAdmin
+  TerraformCiRoleName:
+    Type: String
+    Default: orgseed-ci
+  SeedingAdminMaxSessionSeconds:
+    Type: Number
+    Default: 3600
+    Description: Kept short — this role only runs during bootstrap
+
+Resources:
+  # Bootstrap-only, broad enough to create the CFN stacks in state-backend.yaml.
+  # Not used after Phase 0 — do not grant this role application permissions.
+  OrgSeedAdminRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Ref SeedingAdminRoleName
+      MaxSessionDuration: !Ref SeedingAdminMaxSessionSeconds
+      Tags:
+        - Key: orgseed:managed
+          Value: "true"
+        - Key: orgseed:org-alias
+          Value: !Ref OrgAlias
+        - Key: orgseed:role-purpose
+          Value: bootstrap-only
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !Ref HubRoleArn
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AdministratorAccess
+
+  # Day-to-day Terraform runs use this role, not OrgSeedAdmin. Tighten the
+  # inline policy below to your actual guardrail/baseline scope before
+  # relying on it long-term — AdministratorAccess here is a starting point.
+  TerraformCiRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Ref TerraformCiRoleName
+      Tags:
+        - Key: orgseed:managed
+          Value: "true"
+        - Key: orgseed:org-alias
+          Value: !Ref OrgAlias
+        - Key: orgseed:role-purpose
+          Value: terraform-ci
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !Ref HubRoleArn
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AdministratorAccess
+
+Outputs:
+  OrgSeedAdminRoleArn:
+    Value: !GetAtt OrgSeedAdminRole.Arn
+  TerraformCiRoleArn:
+    Value: !GetAtt TerraformCiRole.Arn

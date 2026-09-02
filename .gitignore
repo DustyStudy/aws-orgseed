@@ -1,0 +1,37 @@
+# Terraform
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+.terraform.lock.hcl
+
+# Generated per-org backend configs (contain account IDs)
+cli/output/
+**/backend.tf
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+
+# SAST/lint tool output
+checkov-report.*
+bandit-report.*
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/

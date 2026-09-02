@@ -1,0 +1,89 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  aws-orgseed: per-org Terraform state backend. Deployed by cli/seed.py in
+  the same run as org-seeding-role.yaml, using the freshly-created
+  OrgSeedAdmin role.
+
+Parameters:
+  OrgAlias:
+    Type: String
+  StateBucketName:
+    Type: String
+  UseLockTable:
+    Type: String
+    AllowedValues: ["true", "false"]
+    Default: "false"
+    Description: >
+      Set true for a DynamoDB lock table (needed on Terraform < 1.10 or if
+      you're not using S3-native state locking).
+  LockTableName:
+    Type: String
+    Default: ""
+
+Conditions:
+  CreateLockTable: !Equals [!Ref UseLockTable, "true"]
+
+Resources:
+  StateBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref StateBucketName
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      VersioningConfiguration:
+        Status: Enabled
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      Tags:
+        - Key: orgseed:managed
+          Value: "true"
+        - Key: orgseed:org-alias
+          Value: !Ref OrgAlias
+
+  StateBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref StateBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: "*"
+            Action: "s3:*"
+            Resource:
+              - !GetAtt StateBucket.Arn
+              - !Sub "${StateBucket.Arn}/*"
+            Condition:
+              Bool:
+                aws:SecureTransport: "false"
+
+  LockTable:
+    Type: AWS::DynamoDB::Table
+    Condition: CreateLockTable
+    Properties:
+      TableName: !Ref LockTableName
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: LockID
+          AttributeType: S
+      KeySchema:
+        - AttributeName: LockID
+          KeyType: HASH
+      Tags:
+        - Key: orgseed:managed
+          Value: "true"
+        - Key: orgseed:org-alias
+          Value: !Ref OrgAlias
+
+Outputs:
+  StateBucketName:
+    Value: !Ref StateBucket
+  LockTableName:
+    Condition: CreateLockTable
+    Value: !Ref LockTable

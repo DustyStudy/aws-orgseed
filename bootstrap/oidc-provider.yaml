@@ -1,0 +1,82 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  aws-orgseed: GitHub Actions OIDC provider + hub seeder role.
+  Deploy ONCE in the hub account. Every org's OrgSeedAdmin/TerraformCI role
+  (see org-seeding-role.yaml) trusts this role's ARN, so this is the only
+  account in the whole setup that holds an OIDC identity provider.
+
+Parameters:
+  GitHubOrg:
+    Type: String
+    Description: GitHub org/user that owns the orgseed repo (e.g. DustyStudy)
+  GitHubRepo:
+    Type: String
+    Default: aws-orgseed
+    Description: Repo name, used to scope the OIDC sub claim
+  AllowedRef:
+    Type: String
+    Default: "ref:refs/heads/main"
+    Description: >
+      Scopes which branch/environment may assume the hub role, e.g.
+      ref:refs/heads/main or environment:prod
+  HubRoleName:
+    Type: String
+    Default: orgseed-hub
+  ThumbprintOverride:
+    Type: CommaDelimitedList
+    Default: "6938fd4d98bab03faadb97b34396831e3780aea1,1c58a3a8518e8759bf075b76b750d4f2df264fcd"
+    Description: >
+      GitHub Actions OIDC thumbprints. AWS validates the cert chain directly
+      as of 2023, but IAM still requires a value here; leave the default
+      unless GitHub rotates their intermediate CA.
+
+Conditions:
+  ProviderNotSupplied: !Equals [!Ref AWS::NoValue, !Ref AWS::NoValue]
+
+Resources:
+  GitHubOidcProvider:
+    Type: AWS::IAM::OIDCProvider
+    Properties:
+      Url: https://token.actions.githubusercontent.com
+      ClientIdList:
+        - sts.amazonaws.com
+      ThumbprintList: !Ref ThumbprintOverride
+
+  HubSeederRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Ref HubRoleName
+      Description: >
+        Sole OIDC-trusted role in this setup. Assumes into each org's
+        OrgSeedAdmin/TerraformCI role — never granted permissions directly
+        beyond sts:AssumeRole.
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !GetAtt GitHubOidcProvider.Arn
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+              StringLike:
+                token.actions.githubusercontent.com:sub: !Sub "repo:${GitHubOrg}/${GitHubRepo}:${AllowedRef}"
+      Policies:
+        - PolicyName: assume-into-orgs
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: sts:AssumeRole
+                Resource: "*"
+                Condition:
+                  StringEquals:
+                    aws:ResourceTag/orgseed:managed: "true"
+
+Outputs:
+  HubRoleArn:
+    Description: Paste this ARN into cli/orgs.yaml as hub_role_arn
+    Value: !GetAtt HubSeederRole.Arn
+  OidcProviderArn:
+    Value: !GetAtt GitHubOidcProvider.Arn
