@@ -1,8 +1,10 @@
 # modules/ci-role
 #
-# Optional Phase 1 module: once an org is bootstrapped, use this to adjust
-# the TerraformCI role's trust policy (e.g. narrow ci_trust_ref, add a
-# second environment) without re-running the CFN bootstrap stack.
+# Optional Phase 1 module: once an org is bootstrapped, use this to compute
+# and inspect the trust policy the TerraformCI role should have (e.g. after
+# narrowing ci_trust_ref, or adding a second environment). Import the actual
+# aws_iam_role resource here once you're ready to manage it via Terraform
+# instead of the CFN bootstrap stack.
 
 terraform {
   required_version = ">= 1.6"
@@ -33,10 +35,12 @@ data "aws_iam_policy_document" "trust" {
   }
 }
 
-resource "aws_iam_role_policy_attachment" "trust_update" {
-  # Placeholder -- replace with aws_iam_role assume_role_policy management
-  # once this org's baseline permission set (vs. AdministratorAccess) is decided.
-  count      = 0
-  role       = var.ci_role_name
-  policy_arn = "arn:aws:iam::aws:policy/ReadOnlyAccess"
+output "trust_policy_json" {
+  description = "Trust policy the TerraformCI role should have -- diff against the live role before importing"
+  value       = data.aws_iam_policy_document.trust.json
+}
+
+output "target_role_name" {
+  description = "Role this trust policy is intended for, once imported"
+  value       = var.ci_role_name
 }

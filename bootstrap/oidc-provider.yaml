@@ -30,9 +30,6 @@ Parameters:
       as of 2023, but IAM still requires a value here; leave the default
       unless GitHub rotates their intermediate CA.
 
-Conditions:
-  ProviderNotSupplied: !Equals [!Ref AWS::NoValue, !Ref AWS::NoValue]
-
 Resources:
   GitHubOidcProvider:
     Type: AWS::IAM::OIDCProvider
@@ -48,7 +45,7 @@ Resources:
       RoleName: !Ref HubRoleName
       Description: >
         Sole OIDC-trusted role in this setup. Assumes into each org's
-        OrgSeedAdmin/TerraformCI role — never granted permissions directly
+        OrgSeedAdmin/TerraformCI role - never granted permissions directly
         beyond sts:AssumeRole.
       AssumeRolePolicyDocument:
         Version: '2012-10-17'

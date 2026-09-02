@@ -18,7 +18,11 @@ Parameters:
       you're not using S3-native state locking).
   LockTableName:
     Type: String
-    Default: ""
+    Default: "unused-lock-table"
+    Description: >
+      Only used when UseLockTable is true. The placeholder default keeps
+      this a valid DynamoDB table name (min 3 chars) even when the
+      resource below is not created.
 
 Conditions:
   CreateLockTable: !Equals [!Ref UseLockTable, "true"]

@@ -57,13 +57,13 @@ def deploy_stack(cfn_client, stack_name: str, template_path: pathlib.Path, param
     except cfn_client.exceptions.ClientError:
         exists = False
 
-    common = dict(
-        StackName=stack_name,
-        TemplateBody=template_body,
-        Parameters=parameters,
-        Capabilities=["CAPABILITY_NAMED_IAM"],
-        Tags=[{"Key": "orgseed:managed", "Value": "true"}],
-    )
+    common = {
+        "StackName": stack_name,
+        "TemplateBody": template_body,
+        "Parameters": parameters,
+        "Capabilities": ["CAPABILITY_NAMED_IAM"],
+        "Tags": [{"Key": "orgseed:managed", "Value": "true"}],
+    }
 
     if exists:
         try:

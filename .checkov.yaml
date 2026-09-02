@@ -9,6 +9,10 @@
 skip-check:
   - CKV_AWS_1    # IAM policy attached to AdministratorAccess -- bootstrap placeholder, see template comment
   - CKV_AWS_273  # IAM role allows AssumeRole with * resource on hub -- scoped by ABAC tag condition instead
+  - CKV_AWS_18   # S3 access logging on the tfstate bucket -- no target log bucket exists yet at
+                 # bootstrap time (chicken-and-egg like the rest of this repo). Point this at a
+                 # centralized log bucket from aws-cloud-security-toolbox in Phase 1, then remove
+                 # this skip.
 
 framework:
   - cloudformation

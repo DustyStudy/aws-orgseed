@@ -18,5 +18,5 @@ orgs:
     ci_role_name: orgseed-ci
     state_bucket: tfstate-acme-commercial
     use_lock_table: false
-    lock_table: ""
+    lock_table: "unused-lock-table"
     ci_trust_ref: "ref:refs/heads/main"

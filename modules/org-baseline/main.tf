@@ -33,3 +33,11 @@ variable "partition" {
 #   org_alias = var.org_alias
 #   partition = var.partition
 # }
+
+output "org_alias" {
+  value = var.org_alias
+}
+
+output "partition" {
+  value = var.partition
+}
