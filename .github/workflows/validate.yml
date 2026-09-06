@@ -6,13 +6,16 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
   cfn-lint:
     name: cfn-lint (bootstrap templates)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
       - run: pip install cfn-lint
@@ -22,8 +25,8 @@ jobs:
     name: terraform fmt / validate / tflint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: hashicorp/setup-terraform@v4
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: "1.9.0"
       - run: terraform fmt -check -recursive modules/
@@ -33,7 +36,7 @@ jobs:
             echo "== $dir =="
             (cd "$dir" && terraform init -backend=false && terraform validate)
           done
-      - uses: terraform-linters/setup-tflint@v6
+      - uses: terraform-linters/setup-tflint@v4
       - run: |
           for dir in modules/*/; do
             (cd "$dir" && tflint)
@@ -43,8 +46,8 @@ jobs:
     name: checkov (CFN + Terraform SAST)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: bridgecrewio/checkov-action@master
+      - uses: actions/checkout@v4
+      - uses: bridgecrewio/checkov-action@99bb2caf247dfd9f03cf984373bc6043d4e32ebf # v12.1347.0
         with:
           directory: .
           framework: cloudformation,terraform
@@ -55,8 +58,8 @@ jobs:
     name: ruff + bandit (cli/)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
       - run: pip install ruff bandit
