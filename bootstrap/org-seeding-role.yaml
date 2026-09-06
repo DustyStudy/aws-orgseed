@@ -1,23 +1,33 @@
+# aws-orgseed: per-org bootstrap roles.
+#
+# Least-privilege split:
+#   - OrgSeedAdmin can manage the two bootstrap CFN stacks (this stack and
+#     state-backend.yaml) -- i.e. it can touch IAM/CloudFormation/S3/DynamoDB
+#     resources tagged orgseed:managed. It is never used for application
+#     changes (SCPs, CloudTrail, Config, Identity Center).
+#   - TerraformCI can read/write Terraform state and manage the Phase 1
+#     guardrail baseline (Organizations, CloudTrail, Config, IAM Identity
+#     Center). It is explicitly denied IAM actions on the two orgseed roles
+#     themselves and CloudFormation actions on the two bootstrap stacks, so
+#     that a compromised or over-broadened day-to-day CI run can never
+#     rewrite its own trust policy or re-grant itself OrgSeedAdmin's
+#     permissions.
+#
+# TerraformCiRole's guardrail-baseline statements are scoped to a specific
+# resource ARN wherever AWS supports resource-level permissions for that
+# action (Organizations policy/target ARNs, CloudTrail trail ARNs). A small
+# remaining set of actions -- organizations:CreatePolicy,
+# organizations:EnablePolicyType, and the Config recorder/delivery-channel
+# Put* calls -- have no resource ARN that exists before the call succeeds,
+# so AWS requires Resource: "*" for them; those statements are constrained
+# instead by an aws:RequestedRegion condition and are called out with an
+# inline checkov skip rather than silently passing.
 AWSTemplateFormatVersion: '2010-09-09'
 Description: >
-  aws-orgseed: per-org bootstrap roles. Deploy into EACH target org's
-  management account using initial admin/break-glass access. Creates the
-  OrgSeedAdmin role (bootstrap + re-seed only) and TerraformCI role
-  (day-to-day guardrail baseline), both trusting only the hub seeder role —
-  this account never holds an OIDC provider itself.
-
-  Least-privilege split:
-    - OrgSeedAdmin can manage the two bootstrap CFN stacks (this stack and
-      state-backend.yaml) -- i.e. it can touch IAM/CloudFormation/S3/DynamoDB
-      resources tagged orgseed:managed. It is never used for application
-      changes (SCPs, CloudTrail, Config, Identity Center).
-    - TerraformCI can read/write Terraform state and manage the Phase 1
-      guardrail baseline (Organizations, CloudTrail, Config, IAM Identity
-      Center). It is explicitly denied IAM actions on the two orgseed roles
-      themselves and CloudFormation actions on the two bootstrap stacks, so
-      that a compromised or over-broadened day-to-day CI run can never
-      rewrite its own trust policy or re-grant itself OrgSeedAdmin's
-      permissions.
+  aws-orgseed: per-org bootstrap roles (OrgSeedAdmin + TerraformCI), both
+  trusting only the hub seeder role. Deploy into each target org's
+  management account using initial admin/break-glass access. See the
+  comment block above this line for the least-privilege design.
 
 Parameters:
   HubRoleArn:
@@ -148,6 +158,13 @@ Resources:
   # (org-baseline module: SCPs, CloudTrail, Config, IAM Identity Center).
   # It is explicitly denied any ability to touch the two orgseed IAM roles
   # or the bootstrap CloudFormation stacks -- see the Deny statement below.
+  #checkov:skip=CKV_AWS_111:organizations:CreatePolicy/EnablePolicyType and the
+  #  Config recorder/delivery-channel Put* calls below have no resource ARN
+  #  that exists prior to the call succeeding, so AWS requires Resource: "*"
+  #  for them. They're constrained by an aws:RequestedRegion condition
+  #  instead (see the OrganizationsUnscopableWrites/ConfigUnscopableWrites
+  #  statements). Every other write action on this role is scoped to a
+  #  specific resource ARN pattern.
   TerraformCiRole:
     Type: AWS::IAM::Role
     Properties:
@@ -196,36 +213,73 @@ Resources:
           PolicyDocument:
             Version: '2012-10-17'
             Statement:
-              # Phase 1 placeholder for modules/org-baseline (SCPs, CloudTrail,
-              # Config, IAM Identity Center). These services mostly don't have
-              # per-resource ARNs for create/attach actions, so Resource "*" is
-              # normal here -- narrow the Action list as org-baseline grows
-              # instead of leaving this wildcarded indefinitely.
-              - Sid: OrganizationsGuardrails
+              - Sid: OrganizationsReadOnly
                 Effect: Allow
                 Action:
                   - organizations:Describe*
                   - organizations:List*
-                  - organizations:CreatePolicy
-                  - organizations:UpdatePolicy
-                  - organizations:DeletePolicy
-                  - organizations:AttachPolicy
-                  - organizations:DetachPolicy
-                  - organizations:EnablePolicyType
                 Resource: "*"
-              - Sid: CloudTrailAndConfigBaseline
+              - Sid: OrganizationsPolicyLifecycle
                 Effect: Allow
                 Action:
-                  - cloudtrail:GetTrailStatus
+                  - organizations:UpdatePolicy
+                  - organizations:DeletePolicy
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:organizations::${AWS::AccountId}:policy/o-*/service_control_policy/p-*"
+              - Sid: OrganizationsPolicyAttachment
+                Effect: Allow
+                Action:
+                  - organizations:AttachPolicy
+                  - organizations:DetachPolicy
+                Resource:
+                  # Both the policy and the attachment target must match one
+                  # of these patterns. Guardrails are attached at root/OU
+                  # level, not per-account -- add an account/* pattern here
+                  # if you ever attach directly to a member account.
+                  - !Sub "arn:${AWS::Partition}:organizations::${AWS::AccountId}:policy/o-*/service_control_policy/p-*"
+                  - !Sub "arn:${AWS::Partition}:organizations::${AWS::AccountId}:root/o-*/r-*"
+                  - !Sub "arn:${AWS::Partition}:organizations::${AWS::AccountId}:ou/o-*/ou-*"
+              - Sid: OrganizationsUnscopableWrites
+                Effect: Allow
+                Action:
+                  - organizations:CreatePolicy
+                  - organizations:EnablePolicyType
+                Resource: "*"
+                Condition:
+                  StringEquals:
+                    aws:RequestedRegion: !Ref "AWS::Region"
+              - Sid: CloudTrailReadOnly
+                Effect: Allow
+                Action:
                   - cloudtrail:DescribeTrails
+                  - cloudtrail:GetTrailStatus
+                Resource: "*"
+              - Sid: CloudTrailTrailManagement
+                Effect: Allow
+                Action:
                   - cloudtrail:CreateTrail
                   - cloudtrail:UpdateTrail
                   - cloudtrail:PutEventSelectors
                   - cloudtrail:StartLogging
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:cloudtrail:*:${AWS::AccountId}:trail/orgseed-*"
+              - Sid: ConfigReadOnly
+                Effect: Allow
+                Action:
                   - config:Describe*
-                  - config:Put*
                 Resource: "*"
-              - Sid: IdentityCenterBaseline
+              - Sid: ConfigUnscopableWrites
+                Effect: Allow
+                Action:
+                  - config:PutConfigRule
+                  - config:PutConfigurationRecorder
+                  - config:PutDeliveryChannel
+                  - config:PutRetentionConfiguration
+                Resource: "*"
+                Condition:
+                  StringEquals:
+                    aws:RequestedRegion: !Ref "AWS::Region"
+              - Sid: IdentityCenterReadOnly
                 Effect: Allow
                 Action:
                   - sso:Describe*
