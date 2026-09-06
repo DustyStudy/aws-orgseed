@@ -17,7 +17,8 @@ orgs:
     state_bucket: tfstate-acme-commercial
     use_lock_table: false
     lock_table: "unused-lock-table"
-    ci_trust_ref: "ref:refs/heads/main"
+    # sts:ExternalId for this org -- see cli/orgs.yaml for details.
+    ci_trust_ref: "CHANGE-ME-acme-commercial"
 
   - alias: acme-govcloud
     management_account_id: "333333333333"
@@ -29,7 +30,7 @@ orgs:
     state_bucket: tfstate-acme-govcloud
     use_lock_table: true
     lock_table: tflock-acme-govcloud
-    ci_trust_ref: "environment:prod"
+    ci_trust_ref: "CHANGE-ME-acme-govcloud"
 
   - alias: beta-co-commercial
     management_account_id: "444444444444"
@@ -41,4 +42,4 @@ orgs:
     state_bucket: tfstate-beta-co-commercial
     use_lock_table: false
     lock_table: "unused-lock-table"
-    ci_trust_ref: "ref:refs/heads/main"
+    ci_trust_ref: "CHANGE-ME-beta-co-commercial"

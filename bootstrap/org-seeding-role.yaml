@@ -2,9 +2,22 @@ AWSTemplateFormatVersion: '2010-09-09'
 Description: >
   aws-orgseed: per-org bootstrap roles. Deploy into EACH target org's
   management account using initial admin/break-glass access. Creates the
-  OrgSeedAdmin role (bootstrap only) and TerraformCI role (day-to-day),
-  both trusting only the hub seeder role — this account never holds an
-  OIDC provider itself.
+  OrgSeedAdmin role (bootstrap + re-seed only) and TerraformCI role
+  (day-to-day guardrail baseline), both trusting only the hub seeder role —
+  this account never holds an OIDC provider itself.
+
+  Least-privilege split:
+    - OrgSeedAdmin can manage the two bootstrap CFN stacks (this stack and
+      state-backend.yaml) -- i.e. it can touch IAM/CloudFormation/S3/DynamoDB
+      resources tagged orgseed:managed. It is never used for application
+      changes (SCPs, CloudTrail, Config, Identity Center).
+    - TerraformCI can read/write Terraform state and manage the Phase 1
+      guardrail baseline (Organizations, CloudTrail, Config, IAM Identity
+      Center). It is explicitly denied IAM actions on the two orgseed roles
+      themselves and CloudFormation actions on the two bootstrap stacks, so
+      that a compromised or over-broadened day-to-day CI run can never
+      rewrite its own trust policy or re-grant itself OrgSeedAdmin's
+      permissions.
 
 Parameters:
   HubRoleArn:
@@ -22,11 +35,22 @@ Parameters:
   SeedingAdminMaxSessionSeconds:
     Type: Number
     Default: 3600
-    Description: Kept short — this role only runs during bootstrap
+    Description: Kept short — this role only runs during bootstrap/re-seed
+  CiTrustRef:
+    Type: String
+    Description: >
+      Per-org secret-like token (matches cli/orgs.yaml's ci_trust_ref for
+      this org) required as the sts:ExternalId when the hub role assumes
+      either role below. This is confused-deputy protection (the standard
+      use of ExternalId), not branch/environment enforcement -- GitHub ref
+      scoping is handled once, for the whole hub, in oidc-provider.yaml's
+      AllowedRef parameter.
+    NoEcho: true
 
 Resources:
-  # Bootstrap-only, broad enough to create the CFN stacks in state-backend.yaml.
-  # Not used after Phase 0 — do not grant this role application permissions.
+  # Bootstrap + re-seed only. Can create/update the bootstrap CFN stacks
+  # (this stack and state-backend.yaml) -- nothing else. Not used for any
+  # application-level (SCP/CloudTrail/Config) change.
   OrgSeedAdminRole:
     Type: AWS::IAM::Role
     Properties:
@@ -46,12 +70,84 @@ Resources:
             Principal:
               AWS: !Ref HubRoleArn
             Action: sts:AssumeRole
-      ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/AdministratorAccess
+            Condition:
+              StringEquals:
+                sts:ExternalId: !Ref CiTrustRef
+      Policies:
+        - PolicyName: orgseed-bootstrap-stack-management
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: ManageBootstrapStacks
+                Effect: Allow
+                Action:
+                  - cloudformation:CreateStack
+                  - cloudformation:UpdateStack
+                  - cloudformation:DeleteStack
+                  - cloudformation:DescribeStacks
+                  - cloudformation:DescribeStackEvents
+                  - cloudformation:DescribeStackResources
+                  - cloudformation:GetTemplate
+                  - cloudformation:ListStackResources
+                  - cloudformation:TagResource
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:cloudformation:*:${AWS::AccountId}:stack/orgseed-*/*"
+              - Sid: ManageOrgseedRoles
+                Effect: Allow
+                Action:
+                  - iam:CreateRole
+                  - iam:DeleteRole
+                  - iam:GetRole
+                  - iam:UpdateRole
+                  - iam:UpdateAssumeRolePolicy
+                  - iam:PutRolePolicy
+                  - iam:DeleteRolePolicy
+                  - iam:GetRolePolicy
+                  - iam:ListRolePolicies
+                  - iam:AttachRolePolicy
+                  - iam:DetachRolePolicy
+                  - iam:ListAttachedRolePolicies
+                  - iam:TagRole
+                  - iam:UntagRole
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${SeedingAdminRoleName}"
+                  - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${TerraformCiRoleName}"
+              - Sid: ManageStateBackend
+                Effect: Allow
+                Action:
+                  - s3:CreateBucket
+                  - s3:PutBucketPolicy
+                  - s3:GetBucketPolicy
+                  - s3:PutEncryptionConfiguration
+                  - s3:GetEncryptionConfiguration
+                  - s3:PutBucketVersioning
+                  - s3:GetBucketVersioning
+                  - s3:PutBucketPublicAccessBlock
+                  - s3:GetBucketPublicAccessBlock
+                  - s3:PutBucketTagging
+                  - s3:ListBucket
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:s3:::tfstate-*"
+              - Sid: ManageLockTable
+                Effect: Allow
+                Action:
+                  - dynamodb:CreateTable
+                  - dynamodb:DeleteTable
+                  - dynamodb:DescribeTable
+                  - dynamodb:TagResource
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:dynamodb:*:${AWS::AccountId}:table/tflock-*"
+              - Sid: ReadOnlyCallerIdentity
+                Effect: Allow
+                Action:
+                  - sts:GetCallerIdentity
+                Resource: "*"
 
-  # Day-to-day Terraform runs use this role, not OrgSeedAdmin. Tighten the
-  # inline policy below to your actual guardrail/baseline scope before
-  # relying on it long-term — AdministratorAccess here is a starting point.
+  # Day-to-day Terraform runs use this role, not OrgSeedAdmin. It reads/
+  # writes Terraform state and manages the Phase 1 guardrail baseline
+  # (org-baseline module: SCPs, CloudTrail, Config, IAM Identity Center).
+  # It is explicitly denied any ability to touch the two orgseed IAM roles
+  # or the bootstrap CloudFormation stacks -- see the Deny statement below.
   TerraformCiRole:
     Type: AWS::IAM::Role
     Properties:
@@ -70,8 +166,101 @@ Resources:
             Principal:
               AWS: !Ref HubRoleArn
             Action: sts:AssumeRole
-      ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/AdministratorAccess
+            Condition:
+              StringEquals:
+                sts:ExternalId: !Ref CiTrustRef
+      Policies:
+        - PolicyName: orgseed-terraform-state-access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: StateObjectAccess
+                Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:ListBucket
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:s3:::tfstate-*"
+                  - !Sub "arn:${AWS::Partition}:s3:::tfstate-*/*"
+              - Sid: LockTableAccess
+                Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:DeleteItem
+                  - dynamodb:DescribeTable
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:dynamodb:*:${AWS::AccountId}:table/tflock-*"
+        - PolicyName: orgseed-guardrail-baseline
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # Phase 1 placeholder for modules/org-baseline (SCPs, CloudTrail,
+              # Config, IAM Identity Center). These services mostly don't have
+              # per-resource ARNs for create/attach actions, so Resource "*" is
+              # normal here -- narrow the Action list as org-baseline grows
+              # instead of leaving this wildcarded indefinitely.
+              - Sid: OrganizationsGuardrails
+                Effect: Allow
+                Action:
+                  - organizations:Describe*
+                  - organizations:List*
+                  - organizations:CreatePolicy
+                  - organizations:UpdatePolicy
+                  - organizations:DeletePolicy
+                  - organizations:AttachPolicy
+                  - organizations:DetachPolicy
+                  - organizations:EnablePolicyType
+                Resource: "*"
+              - Sid: CloudTrailAndConfigBaseline
+                Effect: Allow
+                Action:
+                  - cloudtrail:GetTrailStatus
+                  - cloudtrail:DescribeTrails
+                  - cloudtrail:CreateTrail
+                  - cloudtrail:UpdateTrail
+                  - cloudtrail:PutEventSelectors
+                  - cloudtrail:StartLogging
+                  - config:Describe*
+                  - config:Put*
+                Resource: "*"
+              - Sid: IdentityCenterBaseline
+                Effect: Allow
+                Action:
+                  - sso:Describe*
+                  - sso:List*
+                  - identitystore:Describe*
+                  - identitystore:List*
+                Resource: "*"
+        - PolicyName: orgseed-self-escalation-guard
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # Belt-and-suspenders: even if a future change accidentally
+              # broadens the allow statements above, this Deny blocks the
+              # one thing that actually matters -- TerraformCI editing its
+              # own (or OrgSeedAdmin's) trust/permissions, or touching the
+              # bootstrap stacks that manage them.
+              - Sid: DenySelfEscalation
+                Effect: Deny
+                Action:
+                  - iam:UpdateAssumeRolePolicy
+                  - iam:PutRolePolicy
+                  - iam:AttachRolePolicy
+                  - iam:DetachRolePolicy
+                  - iam:DeleteRolePolicy
+                  - iam:DeleteRole
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${SeedingAdminRoleName}"
+                  - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${TerraformCiRoleName}"
+              - Sid: DenyBootstrapStackAccess
+                Effect: Deny
+                Action:
+                  - cloudformation:UpdateStack
+                  - cloudformation:DeleteStack
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:cloudformation:*:${AWS::AccountId}:stack/orgseed-roles-*/*"
 
 Outputs:
   OrgSeedAdminRoleArn:
