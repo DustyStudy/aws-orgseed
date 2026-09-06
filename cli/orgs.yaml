@@ -19,4 +19,10 @@ orgs:
     state_bucket: tfstate-acme-commercial
     use_lock_table: false
     lock_table: "unused-lock-table"
-    ci_trust_ref: "ref:refs/heads/main"
+    # Required. Passed as the CiTrustRef parameter to org-seeding-role.yaml
+    # and used as the sts:ExternalId when the hub role assumes into this
+    # org's OrgSeedAdmin/TerraformCI roles -- standard confused-deputy
+    # protection, not branch/environment enforcement (that's handled once,
+    # for the whole hub, by oidc-provider.yaml's AllowedRef). Generate a
+    # unique random value per org and store it as a secret, not in git.
+    ci_trust_ref: "CHANGE-ME-acme-commercial"

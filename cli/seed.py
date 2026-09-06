@@ -13,11 +13,17 @@ Two modes:
   (no --init)
       Ongoing mode. Assumes the current credentials ARE the hub role
       (true in CI, where configure-aws-credentials assumes it via OIDC).
-      For every org in the config, assumes into that org's
-      TerraformCiRoleArn is NOT touched here -- this path only re-applies
-      the bootstrap stacks (idempotent update) and regenerates backend.tf
-      files. Ongoing application changes belong in modules/, run as normal
-      Terraform through the CI role, not through this script.
+      For every org in the config, assumes into that org's OrgSeedAdmin
+      role (using ci_trust_ref as the sts:ExternalId -- see
+      bootstrap/org-seeding-role.yaml) and re-applies the two bootstrap
+      stacks (idempotent update): the orgseed IAM roles themselves and
+      the state backend. TerraformCiRoleArn is NOT touched here and is
+      never assumed by this script -- ongoing application changes
+      (SCPs, CloudTrail, Config, Identity Center) belong in modules/,
+      run as normal Terraform through the CI role via OIDC, not through
+      this script. Keeping the two paths separate is what lets
+      TerraformCiRole run with day-to-day guardrail permissions instead
+      of the bootstrap-stack-management permissions OrgSeedAdmin has.
 
 Either mode writes cli/output/<alias>/backend.tf so Terraform in modules/
 can be pointed at the right state location.
@@ -82,8 +88,11 @@ def deploy_stack(cfn_client, stack_name: str, template_path: pathlib.Path, param
     print(f"  {stack_name}: done")
 
 
-def assume_role(sts_client, role_arn: str, session_name: str):
-    resp = sts_client.assume_role(RoleArn=role_arn, RoleSessionName=session_name)
+def assume_role(sts_client, role_arn: str, session_name: str, external_id: str | None = None):
+    kwargs = {"RoleArn": role_arn, "RoleSessionName": session_name}
+    if external_id:
+        kwargs["ExternalId"] = external_id
+    resp = sts_client.assume_role(**kwargs)
     creds = resp["Credentials"]
     return boto3.Session(
         aws_access_key_id=creds["AccessKeyId"],
@@ -126,6 +135,7 @@ def bootstrap_org(session: boto3.Session, alias: str, org: dict):
             "OrgAlias": alias,
             "SeedingAdminRoleName": org["seeding_admin_role_name"],
             "TerraformCiRoleName": org["ci_role_name"],
+            "CiTrustRef": org["ci_trust_ref"],
         },
     )
     deploy_stack(
@@ -162,6 +172,8 @@ def main():
         return
 
     # Ongoing mode: current creds ARE the hub role (assumed via OIDC in CI).
+    # Only ever assumes OrgSeedAdmin (bootstrap-stack management) here --
+    # never TerraformCiRole. See module docstring.
     hub_session = boto3.Session()
     sts = hub_session.client("sts")
 
@@ -172,7 +184,12 @@ def main():
         seeding_admin_arn = partition_arn(
             org["management_account_id"], org["partition"], org["seeding_admin_role_name"]
         )
-        org_session = assume_role(sts, seeding_admin_arn, session_name=f"orgseed-{alias}")
+        org_session = assume_role(
+            sts,
+            seeding_admin_arn,
+            session_name=f"orgseed-{alias}",
+            external_id=org["ci_trust_ref"],
+        )
         bootstrap_org(org_session, alias, org)
 
 

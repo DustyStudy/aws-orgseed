@@ -34,13 +34,23 @@ GitHub Actions (OIDC token)
 
 **Phase 0 — bootstrap (CloudFormation).** Run once per org, using whatever initial
 admin access you have (break-glass, root, or credentials from `orgctl`). Deploys:
-- `OrgSeedAdmin` role — trusts the hub role's ARN, used only during bootstrap
-- `TerraformCI` role — trusts the hub role's ARN, used by every ongoing Terraform run
+- `OrgSeedAdmin` role — trusts the hub role's ARN (scoped to an org-specific
+  `sts:ExternalId`), scoped to managing the two bootstrap CFN stacks
+  (this role/state-backend) — never used for application changes
+- `TerraformCI` role — same trust condition, scoped to Terraform state
+  access plus the Phase 1 guardrail actions below. It is explicitly denied
+  IAM/CloudFormation actions on the bootstrap roles and stacks, so a
+  day-to-day CI run can never widen its own permissions
 - S3 state bucket (+ DynamoDB lock table, or S3-native locking)
 
 **Phase 1 — ongoing (Terraform).** Once bootstrapped, all further changes — SCP
 guardrails, CloudTrail, IAM Identity Center baselines — run as normal Terraform,
 authenticated via OIDC through the same hub-role chain. No static keys anywhere.
+`modules/org-baseline` and `modules/ci-role` are intentionally left as thin
+scaffolds/integration points (see the comments in each) rather than duplicating
+the actual SCP/CloudTrail/Config modules already maintained in
+`aws-cloud-security-toolbox` — wire those in per-org instead of copy-pasting them
+here.
 
 ## Repo layout
 
