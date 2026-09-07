@@ -1,0 +1,11 @@
+* text=auto eol=lf
+
+*.py  text eol=lf
+*.tf  text eol=lf
+*.yaml text eol=lf
+*.yml  text eol=lf
+*.md  text eol=lf
+*.sh  text eol=lf
+
+# Diff CloudFormation/Terraform as text even if tooling misdetects them
+*.tf linguist-language=HCL
