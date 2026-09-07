@@ -16,10 +16,14 @@ orgs:
     ci_role_name: orgseed-ci
     state_bucket: tfstate-acme-commercial
     use_lock_table: false
-    lock_table: "unused-lock-table"
     # sts:ExternalId for this org -- see cli/orgs.yaml for details.
     ci_trust_ref: "CHANGE-ME-acme-commercial"
 
+  # Illustrates the aws-us-gov partition wiring (partition_arn() in
+  # cli/seed.py and the CFN templates both branch on this field). Validate
+  # against a real GovCloud account before relying on it -- GovCloud has a
+  # few edges worth checking directly, e.g. STS regional endpoints and
+  # separate service availability, that this example doesn't exercise.
   - alias: acme-govcloud
     management_account_id: "333333333333"
     partition: aws-us-gov
@@ -41,5 +45,4 @@ orgs:
     ci_role_name: orgseed-ci
     state_bucket: tfstate-beta-co-commercial
     use_lock_table: false
-    lock_table: "unused-lock-table"
     ci_trust_ref: "CHANGE-ME-beta-co-commercial"

@@ -1,10 +1,16 @@
 # modules/org-baseline
 #
 # Phase 1 module: applies the guardrail baseline to a freshly-seeded org,
-# authenticated via the TerraformCI role created in bootstrap/org-seeding-role.yaml.
+# authenticated via the TerraformCI role created in
+# bootstrap/org-seeding-role.yaml. TerraformCiRole's IAM policy is scoped
+# to exactly the actions this module (and its two resource files, scp.tf
+# and cloudtrail.tf) actually call -- if you extend this module, extend
+# that policy too, in the same PR.
 #
-# Intentionally left as a thin scaffold -- wire in SCPs, CloudTrail, and Config
-# modules from aws-cloud-security-toolbox here rather than duplicating them.
+# Config baseline and IAM Identity Center wiring are intentionally left
+# as TODOs (see the bottom of this file) rather than half-implemented --
+# TerraformCiRole already carries the necessary permissions
+# (config:Put*/Describe*, sso:*/identitystore:* read-only) for when you do.
 
 terraform {
   required_version = ">= 1.6"
@@ -27,17 +33,17 @@ variable "partition" {
   description = "aws or aws-us-gov"
 }
 
-# Example wiring point:
-# module "scp_guardrails" {
-#   source    = "git::https://github.com/DustyStudy/aws-cloud-security-toolbox//terraform/scp-guardrails"
-#   org_alias = var.org_alias
-#   partition = var.partition
-# }
-
-output "org_alias" {
-  value = var.org_alias
-}
-
-output "partition" {
-  value = var.partition
-}
+# --- Still TODO, not wired up yet ---
+#
+# AWS Config baseline (recorder + delivery channel + a couple of managed
+# rules). TerraformCiRole already has config:Put*/Describe* -- see
+# bootstrap/org-seeding-role.yaml's ConfigUnscopableWrites /ConfigReadOnly
+# statements -- so this is purely "write the resources", not a permissions
+# change.
+#
+# IAM Identity Center baseline (permission sets, account assignments).
+# TerraformCiRole currently only has read-only sso:*/identitystore:*
+# actions; granting write access here is a deliberate follow-up, not an
+# oversight -- Identity Center changes affect who can log in at all, so
+# they deserve their own PR and their own review, not a silent addition
+# to the general guardrail policy.

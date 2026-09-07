@@ -65,3 +65,14 @@ jobs:
       - run: pip install ruff bandit
       - run: ruff check cli/
       - run: bandit -r cli/ -ll
+
+  python-tests:
+    name: pytest (cli/seed.py)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: pip install -r cli/requirements.txt -r cli/requirements-dev.txt
+      - run: pytest tests/ -v
