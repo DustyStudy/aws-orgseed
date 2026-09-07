@@ -51,13 +51,11 @@ variable "cloudtrail_cloudwatch_role_arn" {
   description = "ARN of the existing IAM role CloudTrail assumes to write to cloudtrail_log_group_arn -- must match role/orgseed-cwl-delivery-* (see bootstrap/org-seeding-role.yaml)"
 }
 
-#checkov:skip=CKV2_AWS_10:cloud_watch_logs_group_arn and cloud_watch_logs_role_arn
-#  ARE set below, wired to required variables (see cloudtrail_log_group_arn /
-#  cloudtrail_cloudwatch_role_arn above). checkov's static graph resolver
-#  can't verify a required variable with no default across a module
-#  boundary when no .tfvars is supplied during the scan, and reports it as
-#  unresolved/empty -- a documented checkov limitation, not a missing
-#  control. Confirm with `terraform plan` against real tfvars if in doubt.
+# checkov's CKV2_AWS_10 (CloudWatch Logs integration) is suppressed for this
+# resource in .checkov.yaml at the repo root, not with an inline comment --
+# CKV2_AWS_10 is a graph check, and graph checks don't honor inline
+# #checkov:skip= comments. See .checkov.yaml for why this is a checkov
+# resolution limitation and not an actual missing control.
 resource "aws_cloudtrail" "baseline" {
   name                          = "orgseed-${var.org_alias}"
   s3_bucket_name                = var.cloudtrail_log_bucket
