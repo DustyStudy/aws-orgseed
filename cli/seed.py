@@ -61,7 +61,7 @@ def validate_config(config: dict) -> None:
     """Fail fast with a clear message instead of a raw KeyError partway
     through a run. Called on every load -- see main()."""
     if not isinstance(config, dict):
-        raise ValueError("orgs.yaml did not parse to a mapping -- check the file's structure")
+        raise TypeError("orgs.yaml did not parse to a mapping -- check the file's structure")
 
     missing_top = [k for k in REQUIRED_TOP_LEVEL_KEYS if k not in config]
     if missing_top:
@@ -75,7 +75,7 @@ def validate_config(config: dict) -> None:
         label = org.get("alias", f"orgs[{i}]") if isinstance(org, dict) else f"orgs[{i}]"
 
         if not isinstance(org, dict):
-            raise ValueError(f"org '{label}' is not a mapping -- check indentation in orgs.yaml")
+            raise TypeError(f"org '{label}' is not a mapping -- check indentation in orgs.yaml")
 
         missing = [k for k in REQUIRED_ORG_KEYS if k not in org]
         if missing:
@@ -211,7 +211,7 @@ def main():
     config = load_config(args.config)
     try:
         validate_config(config)
-    except ValueError as e:
+    except (ValueError, TypeError) as e:
         sys.exit(f"Invalid {args.config}: {e}")
 
     orgs = {o["alias"]: o for o in config["orgs"]}

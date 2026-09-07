@@ -36,8 +36,6 @@ broadened later.
 
 **Phase 0 — bootstrap (CloudFormation).** Run once per org, using whatever initial
 admin access you have (break-glass, root, or credentials from `orgctl`). Deploys:
-<<<<<<< HEAD
-<<<<<<< HEAD
 - `OrgSeedAdmin` role — scoped to managing the two bootstrap CFN stacks
   (this role/state-backend) — never used for application changes
 - `TerraformCI` role — scoped to Terraform state access plus the Phase 1
@@ -49,36 +47,20 @@ admin access you have (break-glass, root, or credentials from `orgctl`). Deploys
 normal Terraform, authenticated via OIDC through the same hub-role chain. No
 static keys anywhere. `modules/org-baseline` currently implements a baseline
 SCP (deny leaving the org, deny disabling CloudTrail/Config outside the CI
-role, require IMDSv2, restrict root-user actions) and a multi-region
-CloudTrail trail; Config baseline and IAM Identity Center wiring are
-documented TODOs in that module rather than half-implemented (`TerraformCI`
-already carries the permissions for both — see the module's comments).
+role, require IMDSv2, restrict root-user actions) and a multi-region,
+KMS-encrypted CloudTrail trail with SNS notifications and CloudWatch Logs
+integration (checkov's `CKV_AWS_35`/`CKV_AWS_252`/`CKV2_AWS_10`). All of
+those CloudTrail dependencies — the log bucket, KMS key, SNS topic, and
+CloudWatch Logs group/delivery role — are expected to already exist
+(managed by `aws-cloud-security-toolbox`/`aws-observability-dashboards`),
+not created by this module; the delivery role specifically must be named
+`orgseed-cwl-delivery-*` to match the scoped `iam:PassRole` grant in
+`bootstrap/org-seeding-role.yaml`. Config baseline and IAM Identity Center
+wiring are documented TODOs in that module rather than half-implemented
+(`TerraformCI` already carries the permissions for both — see the module's
+comments).
 `modules/ci-role` is a separate, intentional scaffold for later migrating
 the trust policy itself to Terraform management.
-=======
-=======
->>>>>>> origin/main
-- `OrgSeedAdmin` role — trusts the hub role's ARN (scoped to an org-specific
-  `sts:ExternalId`), scoped to managing the two bootstrap CFN stacks
-  (this role/state-backend) — never used for application changes
-- `TerraformCI` role — same trust condition, scoped to Terraform state
-  access plus the Phase 1 guardrail actions below. It is explicitly denied
-  IAM/CloudFormation actions on the bootstrap roles and stacks, so a
-  day-to-day CI run can never widen its own permissions
-- S3 state bucket (+ DynamoDB lock table, or S3-native locking)
-
-**Phase 1 — ongoing (Terraform).** Once bootstrapped, all further changes — SCP
-guardrails, CloudTrail, IAM Identity Center baselines — run as normal Terraform,
-authenticated via OIDC through the same hub-role chain. No static keys anywhere.
-`modules/org-baseline` and `modules/ci-role` are intentionally left as thin
-scaffolds/integration points (see the comments in each) rather than duplicating
-the actual SCP/CloudTrail/Config modules already maintained in
-`aws-cloud-security-toolbox` — wire those in per-org instead of copy-pasting them
-here.
-<<<<<<< HEAD
->>>>>>> origin/main
-=======
->>>>>>> origin/main
 
 ## Repo layout
 

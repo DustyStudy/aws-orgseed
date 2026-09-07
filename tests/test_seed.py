@@ -98,8 +98,13 @@ def test_validate_config_allows_lock_table_true_with_name():
 
 def test_validate_config_rejects_non_mapping_org():
     config = _valid_config(orgs=["not-a-dict"])
-    with pytest.raises(ValueError, match="not a mapping"):
+    with pytest.raises(TypeError, match="not a mapping"):
         seed.validate_config(config)
+
+
+def test_validate_config_rejects_non_mapping_top_level():
+    with pytest.raises(TypeError, match="mapping"):
+        seed.validate_config(["not-a-dict"])
 
 
 # ---------------------------------------------------------------------------
