@@ -263,6 +263,21 @@ Resources:
                   - cloudtrail:StartLogging
                 Resource:
                   - !Sub "arn:${AWS::Partition}:cloudtrail:*:${AWS::AccountId}:trail/orgseed-*"
+              # Lets modules/org-baseline enable CloudTrail's CloudWatch Logs
+              # integration (CKV2_AWS_10). CloudTrail needs the caller's
+              # permission to pass it the delivery role -- scoped to a
+              # naming convention rather than a specific pre-known ARN, and
+              # locked to cloudtrail.amazonaws.com so this can't be used to
+              # pass the role to anything else.
+              - Sid: CloudTrailCloudWatchDelivery
+                Effect: Allow
+                Action:
+                  - iam:PassRole
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/orgseed-cwl-delivery-*"
+                Condition:
+                  StringEquals:
+                    iam:PassedToService: cloudtrail.amazonaws.com
               - Sid: ConfigReadOnly
                 Effect: Allow
                 Action:
@@ -315,6 +330,16 @@ Resources:
                   - cloudformation:DeleteStack
                 Resource:
                   - !Sub "arn:${AWS::Partition}:cloudformation:*:${AWS::AccountId}:stack/orgseed-roles-*/*"
+              # Belt-and-suspenders for CloudTrailCloudWatchDelivery above:
+              # even if that statement's Resource pattern is ever loosened,
+              # this blocks PassRole on the two orgseed roles specifically.
+              - Sid: DenyPassRoleOnOrgseedRoles
+                Effect: Deny
+                Action:
+                  - iam:PassRole
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${SeedingAdminRoleName}"
+                  - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${TerraformCiRoleName}"
 
 Outputs:
   OrgSeedAdminRoleArn:

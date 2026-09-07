@@ -2,8 +2,8 @@
 #
 # bootstrap/org-seeding-role.yaml no longer uses AdministratorAccess (see the
 # least-privilege split documented in that template and in README.md), so
-# there is no longer a skip for it here. The two skips below are unrelated
-# and still accurate -- do not broaden them to other files.
+# there is no longer a skip for it here. The skips below are unrelated and
+# still accurate -- do not broaden them to other files.
 
 skip-check:
   - CKV_AWS_273  # IAM role allows AssumeRole with * resource on hub -- scoped by ABAC tag condition instead
@@ -11,6 +11,15 @@ skip-check:
                  # bootstrap time (chicken-and-egg like the rest of this repo). Point this at a
                  # centralized log bucket from aws-cloud-security-toolbox in Phase 1, then remove
                  # this skip.
+  - CKV2_AWS_10  # modules/org-baseline/cloudtrail.tf's aws_cloudtrail.baseline DOES set
+                 # cloud_watch_logs_group_arn/cloud_watch_logs_role_arn -- both are wired to
+                 # required variables (cloudtrail_log_group_arn / cloudtrail_cloudwatch_role_arn).
+                 # This is a checkov graph-check (CKV2_*) limitation: it can't resolve a required
+                 # variable with no default across a module boundary when no .tfvars is supplied
+                 # during the scan, and reports it as unresolved/empty. An inline #checkov:skip=
+                 # comment on the resource does NOT suppress graph checks (unlike the two CKV_AWS_*
+                 # skips above), which is why this lives here instead. Confirm with `terraform
+                 # plan` against real tfvars if in doubt.
 
 framework:
   - cloudformation

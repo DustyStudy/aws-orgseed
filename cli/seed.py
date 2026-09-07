@@ -39,10 +39,59 @@ HERE = pathlib.Path(__file__).parent
 BOOTSTRAP_DIR = HERE.parent / "bootstrap"
 OUTPUT_DIR = HERE / "output"
 
+REQUIRED_TOP_LEVEL_KEYS = ["hub_account_id", "hub_role_arn", "github_repo", "orgs"]
+REQUIRED_ORG_KEYS = [
+    "alias",
+    "management_account_id",
+    "partition",
+    "regions",
+    "seeding_admin_role_name",
+    "ci_role_name",
+    "state_bucket",
+    "ci_trust_ref",
+]
+
 
 def load_config(path: str) -> dict:
     with open(path, "r") as f:
         return yaml.safe_load(f)
+
+
+def validate_config(config: dict) -> None:
+    """Fail fast with a clear message instead of a raw KeyError partway
+    through a run. Called on every load -- see main()."""
+    if not isinstance(config, dict):
+        raise TypeError("orgs.yaml did not parse to a mapping -- check the file's structure")
+
+    missing_top = [k for k in REQUIRED_TOP_LEVEL_KEYS if k not in config]
+    if missing_top:
+        raise ValueError(f"orgs.yaml missing required top-level key(s): {', '.join(missing_top)}")
+
+    if not config["orgs"]:
+        raise ValueError("orgs.yaml must declare at least one org under 'orgs:'")
+
+    seen_aliases = set()
+    for i, org in enumerate(config["orgs"]):
+        label = org.get("alias", f"orgs[{i}]") if isinstance(org, dict) else f"orgs[{i}]"
+
+        if not isinstance(org, dict):
+            raise TypeError(f"org '{label}' is not a mapping -- check indentation in orgs.yaml")
+
+        missing = [k for k in REQUIRED_ORG_KEYS if k not in org]
+        if missing:
+            raise ValueError(f"org '{label}' missing required key(s): {', '.join(missing)}")
+
+        if org["alias"] in seen_aliases:
+            raise ValueError(f"duplicate org alias: {org['alias']}")
+        seen_aliases.add(org["alias"])
+
+        if not org.get("regions"):
+            raise ValueError(f"org '{org['alias']}' must declare at least one region")
+
+        if org.get("use_lock_table") and not org.get("lock_table"):
+            raise ValueError(
+                f"org '{org['alias']}' sets use_lock_table: true but gives no lock_table name"
+            )
 
 
 def partition_arn(account_id: str, partition: str, role_name: str) -> str:
@@ -160,6 +209,11 @@ def main():
     args = parser.parse_args()
 
     config = load_config(args.config)
+    try:
+        validate_config(config)
+    except (ValueError, TypeError) as e:
+        sys.exit(f"Invalid {args.config}: {e}")
+
     orgs = {o["alias"]: o for o in config["orgs"]}
 
     if args.init:
@@ -179,6 +233,8 @@ def main():
 
     targets = [args.org] if args.org else list(orgs.keys())
     for alias in targets:
+        if alias not in orgs:
+            sys.exit(f"Unknown org alias: {alias}")
         org = orgs[alias]
         org["_hub_role_arn"] = config["hub_role_arn"]
         seeding_admin_arn = partition_arn(
