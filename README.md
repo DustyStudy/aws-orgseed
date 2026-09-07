@@ -37,6 +37,7 @@ broadened later.
 **Phase 0 — bootstrap (CloudFormation).** Run once per org, using whatever initial
 admin access you have (break-glass, root, or credentials from `orgctl`). Deploys:
 <<<<<<< HEAD
+<<<<<<< HEAD
 - `OrgSeedAdmin` role — scoped to managing the two bootstrap CFN stacks
   (this role/state-backend) — never used for application changes
 - `TerraformCI` role — scoped to Terraform state access plus the Phase 1
@@ -55,6 +56,8 @@ already carries the permissions for both — see the module's comments).
 `modules/ci-role` is a separate, intentional scaffold for later migrating
 the trust policy itself to Terraform management.
 =======
+=======
+>>>>>>> origin/main
 - `OrgSeedAdmin` role — trusts the hub role's ARN (scoped to an org-specific
   `sts:ExternalId`), scoped to managing the two bootstrap CFN stacks
   (this role/state-backend) — never used for application changes
@@ -72,6 +75,9 @@ scaffolds/integration points (see the comments in each) rather than duplicating
 the actual SCP/CloudTrail/Config modules already maintained in
 `aws-cloud-security-toolbox` — wire those in per-org instead of copy-pasting them
 here.
+<<<<<<< HEAD
+>>>>>>> origin/main
+=======
 >>>>>>> origin/main
 
 ## Repo layout

@@ -18,11 +18,7 @@ orgs:
     ci_role_name: orgseed-ci
     state_bucket: tfstate-acme-commercial
     use_lock_table: false
-<<<<<<< HEAD
     # lock_table: omitted -- only needed when use_lock_table is true.
-=======
-    lock_table: "unused-lock-table"
->>>>>>> origin/main
     # Required. Passed as the CiTrustRef parameter to org-seeding-role.yaml
     # and used as the sts:ExternalId when the hub role assumes into this
     # org's OrgSeedAdmin/TerraformCI roles -- standard confused-deputy
