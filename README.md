@@ -49,7 +49,20 @@ static keys anywhere. `modules/org-baseline` currently implements a baseline
 SCP (deny leaving the org, deny disabling CloudTrail/Config outside the CI
 role, require IMDSv2, restrict root-user actions) and a multi-region,
 KMS-encrypted CloudTrail trail with SNS notifications and CloudWatch Logs
-integration (checkov's `CKV_AWS_35`/`CKV_AWS_252`/`CKV2_AWS_10`). All of
+integration (checkov's `CKV_AWS_35`/`CKV_AWS_252`/`CKV2_AWS_10`).
+
+Two scope limits worth knowing before you rely on it:
+
+- **SCPs never apply to the management account** - only to member accounts.
+  Attaching the baseline to the root protects every member account and leaves
+  the management account governed by IAM alone. Trial it on an OU first.
+- **The trail is account-scoped by default** (`is_organization_trail = false`):
+  it records the management account's own events, not member accounts'. Set it
+  to `true` for an organization trail after enabling CloudTrail trusted access
+  and the bucket policy for org delivery - see the variable's description.
+  `enforce_imdsv2` (default `true`) blocks any `ec2:RunInstances` that doesn't
+  require IMDSv2, including launch templates, ASGs and Karpenter; turn it off
+  while you fix legacy launches. All of
 those CloudTrail dependencies — the log bucket, KMS key, SNS topic, and
 CloudWatch Logs group/delivery role — are expected to already exist
 (managed by `aws-cloud-security-toolbox`/`aws-observability-dashboards`),
@@ -88,15 +101,36 @@ examples/
 
 ## Quickstart
 
-1. Deploy `bootstrap/oidc-provider.yaml` once, in your hub account.
-2. Edit `cli/orgs.yaml` with your org list (see `examples/multi-org-example.yaml`).
-3. In each target org's management account, manually grant your hub role temporary
-   admin access (or use existing break-glass access) — this is the one manual step
-   that can't be automated away, by design.
-4. Run `python cli/seed.py --config cli/orgs.yaml` to deploy the bootstrap stack into
-   every org and generate a ready-to-use `backend.tf` for each.
-5. From here on, Terraform runs in `.github/workflows/` authenticate via OIDC through
-   the hub role automatically — no keys to rotate.
+1. **Hub account.** Deploy `bootstrap/oidc-provider.yaml` once. An account can
+   hold only one GitHub OIDC provider: if it already has one (another repo's
+   bootstrap, an earlier setup), pass its ARN as `ExistingOidcProviderArn` and
+   the stack reuses it instead of failing with `EntityAlreadyExists`.
+2. **GitHub Environment.** Create an Environment named **`orgseed`** in the repo
+   (Settings -> Environments), add required reviewers, and restrict it to the
+   `main` branch. The hub role trusts only `environment:orgseed` by default
+   (`AllowedRef`), so a push to `main` alone can't reach any org - the reviewer
+   approval is the gate. Set repo variable `ORGSEED_HUB_ROLE_ARN` from the
+   stack's `HubRoleArn` output.
+3. **ExternalIds.** For each org generate a unique random value
+   (`openssl rand -hex 24`), store it as an `orgseed` Environment secret
+   (`ORGSEED_TRUST_<ALIAS>`), and map it in `.github/workflows/seed.yml`.
+4. **Config.** Edit `cli/orgs.yaml` (see `examples/multi-org-example.yaml`).
+   `ci_trust_ref` takes `env:NAME` so the value stays out of git; the shipped
+   `CHANGE-ME-*` placeholder is refused at run time.
+5. **First run per org.** In each target org's management account, use existing
+   break-glass/admin credentials and run
+   `python cli/seed.py --init <alias>` - the one manual step that can't be
+   automated away, by design. It deploys the roles and state-backend stacks and
+   writes `cli/output/<alias>/backend.tf`.
+6. **After that,** run the `seed` workflow (it pauses for reviewer approval) to
+   re-apply the bootstrap stacks; Terraform for `modules/` authenticates via the
+   same OIDC -> hub -> `orgseed-ci` chain. No static keys anywhere.
+
+**Changing `AllowedRef` on an existing hub stack.** Earlier versions defaulted
+it to `ref:refs/heads/main`. A job that declares `environment:` presents
+`repo:<org>/<repo>:environment:<name>` as its subject, not the ref, so update the
+hub stack's `AllowedRef` to `environment:orgseed` (or the `seed` workflow's
+role assumption will be rejected).
 
 ## Testing
 
@@ -105,8 +139,16 @@ pip install -r cli/requirements.txt -r cli/requirements-dev.txt
 pytest tests/ -v
 ```
 
-Covers `cli/seed.py`'s config validation, the create/update/no-op branching in
-`deploy_stack()`, `ExternalId` handling in `assume_role()`, and `backend.tf`
+`tests/test_templates.py` parses the bootstrap templates, the Terraform baseline
+and the seed workflow and pins the properties that were once wrong (S3-native
+lock release, Organizations' global region, the CloudTrail reads Terraform
+needs, OIDC-provider reuse, the environment gate) - things cfn-lint and checkov
+can't tell you are wrong *for how they're used*.
+
+`tests/test_seed.py` covers `cli/seed.py`'s config validation, the
+create/update/no-op branching in `deploy_stack()` (and its refusal to mistake
+AccessDenied for a missing stack), `ExternalId` resolution and placeholder
+rejection, `ExternalId` handling in `assume_role()`, and `backend.tf`
 generation — using plain `unittest.mock` against the boto3 client rather than
 a networked AWS mock, since `seed.py` is a thin orchestration layer over a
 handful of calls.

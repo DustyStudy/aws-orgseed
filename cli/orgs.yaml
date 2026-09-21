@@ -19,10 +19,16 @@ orgs:
     state_bucket: tfstate-acme-commercial
     use_lock_table: false
     # lock_table: omitted -- only needed when use_lock_table is true.
-    # Required. Passed as the CiTrustRef parameter to org-seeding-role.yaml
-    # and used as the sts:ExternalId when the hub role assumes into this
-    # org's OrgSeedAdmin/TerraformCI roles -- standard confused-deputy
-    # protection, not branch/environment enforcement (that's handled once,
-    # for the whole hub, by oidc-provider.yaml's AllowedRef). Generate a
-    # unique random value per org and store it as a secret, not in git.
-    ci_trust_ref: "CHANGE-ME-acme-commercial"
+    # Required. The sts:ExternalId the hub role must present when it assumes
+    # into this org's OrgSeedAdmin/TerraformCI roles (passed to
+    # org-seeding-role.yaml as CiTrustRef) -- standard confused-deputy
+    # protection, not branch/environment enforcement (that's handled once, for
+    # the whole hub, by oidc-provider.yaml's AllowedRef).
+    #
+    # Use `env:NAME` to read it from an environment variable so it never lands
+    # in git: in CI, put it in the `orgseed` GitHub Environment's secrets and map
+    # it in .github/workflows/seed.yml; for a local `--init`, export it in your
+    # shell. Generate a unique random value per org (e.g. `openssl rand -hex 24`).
+    # A literal value also works, but the shipped "CHANGE-ME-*" placeholder is
+    # refused at run time.
+    ci_trust_ref: "env:ORGSEED_TRUST_ACME_COMMERCIAL"

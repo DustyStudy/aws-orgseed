@@ -30,6 +30,10 @@ Conditions:
 Resources:
   StateBucket:
     Type: AWS::S3::Bucket
+    # Terraform state is the one thing here that can't be recreated. Retain it
+    # if the stack is deleted, and if a property change would replace it.
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       BucketName: !Ref StateBucketName
       BucketEncryption:
