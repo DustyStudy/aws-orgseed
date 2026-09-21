@@ -40,7 +40,7 @@ HERE = pathlib.Path(__file__).parent
 BOOTSTRAP_DIR = HERE.parent / "bootstrap"
 OUTPUT_DIR = HERE / "output"
 
-REQUIRED_TOP_LEVEL_KEYS = ["hub_account_id", "hub_role_arn", "github_repo", "orgs"]
+REQUIRED_TOP_LEVEL_KEYS = ["hub_account_id", "hub_role_arn", "orgs"]
 REQUIRED_ORG_KEYS = [
     "alias",
     "management_account_id",

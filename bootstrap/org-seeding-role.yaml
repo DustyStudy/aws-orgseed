@@ -42,6 +42,16 @@ Parameters:
   TerraformCiRoleName:
     Type: String
     Default: orgseed-ci
+  AllowAttachToRoot:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: >
+      Whether orgseed-ci may attach or detach SCPs at the ORGANIZATION ROOT (which
+      applies to every member account at once). Default false: guardrails go on OUs, and
+      the baseline stack already refuses a root target - this makes IAM refuse it too, so
+      the protection does not depend on Terraform code alone. Set true only to
+      deliberately manage root-level guardrails.
   SeedingAdminMaxSessionSeconds:
     Type: Number
     Default: 3600
@@ -63,6 +73,7 @@ Conditions:
   # commercial partition and us-gov-west-1 in GovCloud, regardless of which
   # region this stack was deployed to.
   IsGovPartition: !Equals [!Ref "AWS::Partition", aws-us-gov]
+  AttachToRoot: !Equals [!Ref AllowAttachToRoot, "true"]
 
 Resources:
   # Bootstrap + re-seed only. Can create/update the bootstrap CFN stacks
@@ -253,9 +264,15 @@ Resources:
                   # Both the policy and the attachment target must match one
                   # of these patterns. Guardrails are attached at root/OU
                   # level, not per-account -- add an account/* pattern here
-                  # if you ever attach directly to a member account.
+                  # if you ever attach directly to a member account. The root
+                  # is opt-in (AllowAttachToRoot): a guardrail there hits every
+                  # member account at once and only the management account can
+                  # undo it.
                   - !Sub "arn:${AWS::Partition}:organizations::${AWS::AccountId}:policy/o-*/service_control_policy/p-*"
-                  - !Sub "arn:${AWS::Partition}:organizations::${AWS::AccountId}:root/o-*/r-*"
+                  - !If
+                    - AttachToRoot
+                    - !Sub "arn:${AWS::Partition}:organizations::${AWS::AccountId}:root/o-*/r-*"
+                    - !Ref AWS::NoValue
                   - !Sub "arn:${AWS::Partition}:organizations::${AWS::AccountId}:ou/o-*/ou-*"
               - Sid: OrganizationsUnscopableWrites
                 Effect: Allow

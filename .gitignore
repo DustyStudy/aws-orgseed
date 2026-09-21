@@ -13,6 +13,8 @@ override.tf.json
 .terraformrc
 terraform.rc
 .terraform.lock.hcl
+# ...except the root stack's: CI plans and applies must use the same provider build.
+!stacks/baseline/.terraform.lock.hcl
 
 # Generated per-org backend configs (contain account IDs)
 cli/output/
