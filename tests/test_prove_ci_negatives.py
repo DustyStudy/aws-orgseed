@@ -122,6 +122,14 @@ def test_a_control_being_denied_invalidates_the_run():
     assert any(f.startswith("whoami") for f in pn.evaluate(r))
 
 
+def test_the_root_guard_is_probed_with_real_calls():
+    """The IAM-level 'never the org root' guard is proven by asking, as orgseed-ci, to
+    attach and detach an SCP at the root - both must be refused."""
+    by_name = {p.name: p for p in pn.build_probes()}
+    for name in ("attach_scp_to_root", "detach_scp_from_root"):
+        assert by_name[name].group == "outside_scope"
+
+
 def test_every_group_is_covered():
     groups = {p.group for p in pn.build_probes()}
     assert groups == {"self_escalation", "outside_scope", "control"}
@@ -134,9 +142,12 @@ NEVER = {
     "leave_organization", "create_user", "create_access_key", "create_role", "delete_role",
     "create_policy", "delete_policy", "delete_bucket", "delete_object", "put_object",
     "terminate_instances", "run_instances", "remove_account_from_organization", "close_account",
-    "create_organizational_unit", "attach_policy", "detach_policy", "delete_account",
+    "create_organizational_unit", "delete_account",
     "delete_bucket_policy", "put_bucket_versioning", "put_bucket_acl",
 }
+# Destructive with a real target, inert with a nonexistent one: allowed ONLY against a
+# policy that does not exist (PolicyNotFound if wrongly permitted; nothing changes).
+INERT_ONLY = {("organizations", "attach_policy"), ("organizations", "detach_policy")}
 
 
 class Recorder:
@@ -166,8 +177,10 @@ def run_all_recorded():
 
 
 def test_no_probe_makes_a_destructive_call():
-    for service, method, _ in run_all_recorded():
+    for service, method, kwargs in run_all_recorded():
         assert method not in NEVER, f"{service}.{method} must never be called by a probe"
+        if (service, method) in INERT_ONLY:
+            assert "nonexistent" in kwargs["PolicyId"], f"{service}.{method} may only target a policy that does not exist"
 
 
 def test_the_guarded_mutating_calls_are_inert_even_if_wrongly_allowed():
@@ -185,13 +198,18 @@ def test_the_guarded_mutating_calls_are_inert_even_if_wrongly_allowed():
     assert marker in calls[("cloudformation", "update_stack")]["StackName"]
     assert marker in calls[("cloudformation", "delete_stack")]["StackName"]
     assert "nonexistent" in calls[("organizations", "delete_organizational_unit")]["OrganizationalUnitId"]
+    for method in ("attach_policy", "detach_policy"):
+        call = calls[("organizations", method)]
+        assert call["PolicyId"] == "p-nonexistent0", "PolicyNotFound if wrongly allowed - nothing is attached or detached"
+        assert call["TargetId"] == "r-nonexistent", "a root-shaped ID that is not the real root"
     move = calls[("organizations", "move_account")]
     assert move["AccountId"] == "000000000000" and "nonexistent" in move["DestinationParentId"]
 
 
 def test_the_mutating_probes_are_flagged_so_they_can_be_reviewed():
     mutating = {p.name for p in pn.build_probes() if p.mutating}
-    assert {"delete_own_inline_policy", "rewrite_admin_trust", "update_bootstrap_stack", "move_account", "change_state_bucket_policy"} <= mutating
+    assert {"delete_own_inline_policy", "rewrite_admin_trust", "update_bootstrap_stack", "move_account", "change_state_bucket_policy",
+            "attach_scp_to_root", "detach_scp_from_root"} <= mutating
     assert not any(p.mutating for p in pn.build_probes() if p.group == "control")
 
 

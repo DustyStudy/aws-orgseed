@@ -72,8 +72,6 @@ not created by this module; the delivery role specifically must be named
 wiring are documented TODOs in that module rather than half-implemented
 (`TerraformCI` already carries the permissions for both — see the module's
 comments).
-`modules/ci-role` is a separate, intentional scaffold for later migrating
-the trust policy itself to Terraform management.
 
 ## Repo layout
 
@@ -84,7 +82,6 @@ bootstrap/                  CloudFormation — solves the chicken-and-egg proble
   state-backend.yaml          per-org S3 state bucket + DynamoDB lock table
 modules/                     Terraform, used after bootstrap
   org-baseline/                baseline SCP + optional CloudTrail; Config/Identity Center: TODO
-  ci-role/                     scaffold for migrating the TerraformCI trust policy to Terraform
 stacks/
   baseline/                    Phase 1 root stack: the SCP, on ONE OU (never the root)
 cli/

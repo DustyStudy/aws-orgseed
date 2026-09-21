@@ -308,3 +308,47 @@ def test_seed_workflow_hub_role_arn_is_a_secret(seed_workflow):
     step = next(s for s in seed_workflow["jobs"]["seed"]["steps"] if s.get("name", "").startswith("Configure AWS credentials"))
     assert step["with"]["role-to-assume"] == "${{ secrets.ORGSEED_HUB_ROLE_ARN }}"
 
+
+# ---------------------------------------------------------------------------
+# The "never the org root" guard must live in IAM, not only in Terraform
+# ---------------------------------------------------------------------------
+
+def _attachment_resources(template):
+    stmts = policy_statements(template, "TerraformCiRole", "orgseed-guardrail-baseline")
+    return as_list(statement(stmts, "OrganizationsPolicyAttachment")["Resource"])
+
+
+def _arn_text(resource):
+    if isinstance(resource, dict) and "Fn::Sub" in resource:
+        return resource["Fn::Sub"]
+    return str(resource)
+
+
+def _is_conditional(resource):
+    return isinstance(resource, dict) and "Fn::If" in resource
+
+
+def test_ci_role_cannot_attach_or_detach_scps_at_the_org_root_by_default(roles_template):
+    """The stack refuses a root target, but that guard is Terraform code: the role's own
+    IAM used to allow attaching any SCP to the root, which hits every member account at
+    once and can only be undone from the management account. The root ARN is now behind
+    an explicit opt-in condition, so by default IAM refuses it too."""
+    resources = _attachment_resources(roles_template)
+    unconditional = [_arn_text(r) for r in resources if not _is_conditional(r)]
+    assert not any(":root/" in arn for arn in unconditional), "the root must not be unconditionally allowed"
+    conditional = [r for r in resources if _is_conditional(r)]
+    assert len(conditional) == 1
+    cond, when_true, when_false = conditional[0]["Fn::If"]
+    assert cond == "AttachToRoot" and ":root/" in _arn_text(when_true)
+    assert when_false == {"Ref": "AWS::NoValue"}
+
+
+def test_attaching_at_the_root_is_an_explicit_opt_in(roles_template):
+    param = roles_template["Parameters"]["AllowAttachToRoot"]
+    assert param["Default"] == "false" and param["AllowedValues"] == ["true", "false"]
+    assert roles_template["Conditions"]["AttachToRoot"] == {"Fn::Equals": [{"Ref": "AllowAttachToRoot"}, "true"]}
+
+
+def test_ous_and_policies_are_still_allowed_targets(roles_template):
+    unconditional = [_arn_text(r) for r in _attachment_resources(roles_template) if not _is_conditional(r)]
+    assert any(":ou/" in arn for arn in unconditional) and any(":policy/" in arn for arn in unconditional)

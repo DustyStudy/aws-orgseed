@@ -46,11 +46,19 @@ def _valid_config(orgs=None):
     }
 
 
+def test_github_repo_is_optional():
+    """It was required but never used by any code: a key that must be filled in and then
+    ignored is a trap."""
+    config = _valid_config()
+    del config["github_repo"]
+    seed.validate_config(config)  # should not raise
+
+
 def test_validate_config_accepts_a_valid_config():
     seed.validate_config(_valid_config())  # should not raise
 
 
-@pytest.mark.parametrize("missing_key", seed.REQUIRED_TOP_LEVEL_KEYS)
+@pytest.mark.parametrize("missing_key", [k for k in seed.REQUIRED_TOP_LEVEL_KEYS])
 def test_validate_config_rejects_missing_top_level_key(missing_key):
     config = _valid_config()
     del config[missing_key]

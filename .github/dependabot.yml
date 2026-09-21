@@ -17,7 +17,9 @@ updates:
         patterns: ["*"]
 
   - package-ecosystem: "terraform"
-    directory: "/modules"
+    directories:
+      - "/modules/*"
+      - "/stacks/*"
     schedule:
       interval: "weekly"
     groups:

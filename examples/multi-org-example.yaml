@@ -3,6 +3,7 @@
 
 hub_account_id: "111111111111"
 hub_role_arn: "arn:aws:iam::111111111111:role/orgseed-hub"
+# Optional and informational; nothing reads it.
 github_repo: "DustyStudy/aws-orgseed"
 
 orgs:

@@ -130,6 +130,14 @@ def build_probes():
               lambda s, c: s.client("organizations").delete_organizational_unit(OrganizationalUnitId="ou-nonexistent-00000000")),
         Probe("move_account", "outside_scope", True,
               lambda s, c: s.client("organizations").move_account(AccountId="000000000000", SourceParentId="r-nonexistent", DestinationParentId="ou-nonexistent-00000000")),
+        # The org root is a target IAM must refuse by default (AllowAttachToRoot=false).
+        # PolicyId is a nonexistent SCP whose ARN matches the allowed policy pattern, so the
+        # ROOT is the only thing that can cause a denial - and if the guard were missing
+        # the call fails harmlessly with PolicyNotFound.
+        Probe("attach_scp_to_root", "outside_scope", True,
+              lambda s, c: s.client("organizations").attach_policy(PolicyId="p-nonexistent0", TargetId="r-nonexistent")),
+        Probe("detach_scp_from_root", "outside_scope", True,
+              lambda s, c: s.client("organizations").detach_policy(PolicyId="p-nonexistent0", TargetId="r-nonexistent")),
         # --- control: what the role is for -------------------------------------------------
         Probe("whoami", "control", False, lambda s, c: s.client("sts").get_caller_identity()),
         Probe("describe_organization", "control", False, lambda s, c: s.client("organizations").describe_organization()),
