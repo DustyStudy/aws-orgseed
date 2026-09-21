@@ -1,0 +1,15 @@
+{
+  "phase": "no-scp",
+  "account": "(test account, masked)",
+  "role": "it-admin",
+  "time": "2026-09-21T22:58:04.741774+00:00",
+  "results": {
+    "imdsv1_launch": "authorized",
+    "imdsv2_launch": "authorized",
+    "implicit_launch_imdsv2_ami": "authorized",
+    "stop_cloudtrail": "authorized",
+    "stop_config": "authorized",
+    "implicit_launch_legacy_ami": "authorized"
+  },
+  "failures": []
+}

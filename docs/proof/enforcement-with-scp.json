@@ -1,0 +1,15 @@
+{
+  "phase": "with-scp",
+  "account": "(test account, masked)",
+  "role": "it-admin",
+  "time": "2026-09-21T22:55:01.728215+00:00",
+  "results": {
+    "imdsv1_launch": "denied_by_scp",
+    "imdsv2_launch": "authorized",
+    "implicit_launch_imdsv2_ami": "authorized",
+    "stop_cloudtrail": "denied_by_scp",
+    "stop_config": "denied_by_scp",
+    "implicit_launch_legacy_ami": "denied_by_scp"
+  },
+  "failures": []
+}

@@ -212,6 +212,13 @@ it to `ref:refs/heads/main`. A job that declares `environment:` presents
 hub stack's `AllowedRef` to `environment:orgseed` (or the `seed` workflow's
 role assumption will be rejected).
 
+## Proof
+
+[`docs/PROOF.md`](docs/PROOF.md) is a report of running all of this for real against a real
+AWS Organization: what was proven and how (with CloudTrail as the source of truth),
+what breaking it for real found, what it does **not** prove, and how to reproduce it.
+The machine-readable evidence is in [`docs/proof/`](docs/proof/).
+
 ## Testing
 
 ```
