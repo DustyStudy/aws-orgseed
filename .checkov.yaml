@@ -6,20 +6,19 @@
 # still accurate -- do not broaden them to other files.
 
 skip-check:
-  - CKV_AWS_273  # IAM role allows AssumeRole with * resource on hub -- scoped by ABAC tag condition instead
   - CKV_AWS_18   # S3 access logging on the tfstate bucket -- no target log bucket exists yet at
                  # bootstrap time (chicken-and-egg like the rest of this repo). Point this at a
                  # centralized log bucket from aws-cloud-security-toolbox in Phase 1, then remove
                  # this skip.
-  - CKV2_AWS_10  # modules/org-baseline/cloudtrail.tf's aws_cloudtrail.baseline DOES set
-                 # cloud_watch_logs_group_arn/cloud_watch_logs_role_arn -- both are wired to
-                 # required variables (cloudtrail_log_group_arn / cloudtrail_cloudwatch_role_arn).
-                 # This is a checkov graph-check (CKV2_*) limitation: it can't resolve a required
-                 # variable with no default across a module boundary when no .tfvars is supplied
-                 # during the scan, and reports it as unresolved/empty. An inline #checkov:skip=
-                 # comment on the resource does NOT suppress graph checks (unlike the two CKV_AWS_*
-                 # skips above), which is why this lives here instead. Confirm with `terraform
-                 # plan` against real tfvars if in doubt.
+  - CKV2_AWS_10  # aws_cloudtrail.baseline DOES set cloud_watch_logs_group_arn and
+                 # cloud_watch_logs_role_arn (required variables). This is a checkov *graph* check
+                 # that only passes when the log group is an `aws_cloudwatch_log_group` RESOURCE
+                 # defined in the same configuration (it requires a graph edge to one). Here the log
+                 # group is deliberately external - provisioned by aws-cloud-security-toolbox /
+                 # aws-observability-dashboards - so the edge can never exist. Supplying real variable
+                 # values does NOT change the result (verified with --var-file); it is a
+                 # scope limit of the check, not a missing control. Graph checks (CKV2_*) also ignore
+                 # inline #checkov:skip comments, which is why this lives here.
 
 framework:
   - cloudformation
