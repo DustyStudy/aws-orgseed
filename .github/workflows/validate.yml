@@ -28,17 +28,17 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4
         with:
-          terraform_version: "1.9.0"
-      - run: terraform fmt -check -recursive modules/
+          terraform_version: "1.10.5" # modules require >= 1.10 (S3-native state locking)
+      - run: terraform fmt -check -recursive modules/ stacks/
       - name: terraform validate (each module)
         run: |
-          for dir in modules/*/; do
+          for dir in modules/*/ stacks/*/; do
             echo "== $dir =="
             (cd "$dir" && terraform init -backend=false && terraform validate)
           done
       - name: terraform test (mocked provider, no AWS needed)
         run: |
-          for dir in modules/*/; do
+          for dir in modules/*/ stacks/*/; do
             if [ -d "$dir/tests" ]; then
               echo "== $dir =="
               (cd "$dir" && terraform init -backend=false && terraform test)
@@ -46,7 +46,7 @@ jobs:
           done
       - uses: terraform-linters/setup-tflint@1cf010d3c7aef302051ccdb68c14c5dc2efa34ef # v6
       - run: |
-          for dir in modules/*/; do
+          for dir in modules/*/ stacks/*/; do
             (cd "$dir" && tflint)
           done
 

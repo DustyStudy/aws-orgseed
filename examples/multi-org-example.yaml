@@ -18,6 +18,11 @@ orgs:
     use_lock_table: false
     # sts:ExternalId for this org -- see cli/orgs.yaml for details.
     ci_trust_ref: "env:ORGSEED_TRUST_ACME_COMMERCIAL"
+    # Phase 1 (the terraform workflow): the OU the guardrail SCP attaches to. An OU
+    # only - the stack refuses the org root. Optional; needed only to run Phase 1.
+    baseline:
+      scp_target_id: ou-xxxx-xxxxxxxx
+      enforce_imdsv2: true
 
   # Illustrates the aws-us-gov partition wiring (partition_arn() in
   # cli/seed.py and the CFN templates both branch on this field). Validate
