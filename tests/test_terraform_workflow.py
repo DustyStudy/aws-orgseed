@@ -128,3 +128,13 @@ def test_the_workflow_never_uses_the_sessions_role_for_the_seed_stacks(wf):
     """orgseed-ci is for guardrails. The bootstrap stacks stay with OrgSeedAdmin/seed.yml."""
     text = WORKFLOW.read_text()
     assert "OrgSeedAdmin" not in text and "seed.py" not in text
+
+
+def test_the_apply_summary_knows_a_destroy_has_no_outputs_to_read(wf):
+    """After `destroy` there are no outputs; the summary must say so instead of
+    labelling it 'Applied' and printing a confusing 'output not found' error."""
+    step = next(s for s in wf["jobs"]["apply"]["steps"] if s.get("name") == "Summarize")
+    assert step["env"]["ACTION"] == "${{ inputs.action }}"
+    assert '"$ACTION" = "destroy"' in step["run"] and "### Destroyed" in step["run"]
+    assert "|| true" not in step["run"], "no error-swallowing: a real failure to read the outputs should show"
+
