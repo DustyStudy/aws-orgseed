@@ -17,7 +17,7 @@ orgs:
     state_bucket: tfstate-acme-commercial
     use_lock_table: false
     # sts:ExternalId for this org -- see cli/orgs.yaml for details.
-    ci_trust_ref: "CHANGE-ME-acme-commercial"
+    ci_trust_ref: "env:ORGSEED_TRUST_ACME_COMMERCIAL"
 
   # Illustrates the aws-us-gov partition wiring (partition_arn() in
   # cli/seed.py and the CFN templates both branch on this field). Validate
@@ -34,7 +34,7 @@ orgs:
     state_bucket: tfstate-acme-govcloud
     use_lock_table: true
     lock_table: tflock-acme-govcloud
-    ci_trust_ref: "CHANGE-ME-acme-govcloud"
+    ci_trust_ref: "env:ORGSEED_TRUST_ACME_GOVCLOUD"
 
   - alias: beta-co-commercial
     management_account_id: "444444444444"
@@ -45,4 +45,4 @@ orgs:
     ci_role_name: orgseed-ci
     state_bucket: tfstate-beta-co-commercial
     use_lock_table: false
-    ci_trust_ref: "CHANGE-ME-beta-co-commercial"
+    ci_trust_ref: "env:ORGSEED_TRUST_BETA_CO_COMMERCIAL"
