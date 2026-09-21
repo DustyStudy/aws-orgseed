@@ -1,0 +1,70 @@
+name: prove
+
+# Runs the least-privilege proof (cli/prove_ci_negatives.py) AS the orgseed-ci role,
+# through the real GitHub OIDC -> orgseed-hub -> orgseed-ci chain.
+#
+# WHO runs it is the whole point: from an admin session these calls would all succeed
+# and prove nothing. Every call that is expected to be denied is harmless if it is
+# wrongly allowed (nonexistent policy ARNs, malformed documents, nonexistent stacks),
+# so a broken deny fails this job and does no damage. Read-only in effect.
+
+on:
+  workflow_dispatch:
+    inputs:
+      org:
+        description: "Org alias from the org config"
+        required: true
+        type: string
+
+permissions:
+  id-token: write # OIDC -> AWS; no static keys anywhere
+  contents: read
+
+# One at a time, and never alongside a seed or terraform run against the same org.
+concurrency:
+  group: orgseed
+  cancel-in-progress: false
+
+jobs:
+  least-privilege:
+    runs-on: ubuntu-latest
+    environment: orgseed
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      # Renders the stack inputs (masking every identifier first) and chains
+      # hub -> orgseed-ci. Everything below runs as orgseed-ci.
+      - uses: ./.github/actions/orgseed-session
+        with:
+          config: ${{ secrets.ORGSEED_CONFIG }}
+          org: ${{ inputs.org }}
+          hub-role-arn: ${{ secrets.ORGSEED_HUB_ROLE_ARN }}
+          # One line per org: an Environment secret cannot be chosen dynamically.
+          external-id: ${{ secrets.ORGSEED_TRUST_SANDBOX }}
+
+      # No `|| true`: a proof that cannot fail proves nothing. (pipefail is on, so tee
+      # does not swallow the script's exit status.)
+      - name: Prove orgseed-ci cannot escalate or stray
+        run: |
+          python cli/prove_ci_negatives.py \
+            --backend-hcl stacks/baseline/backend.hcl \
+            --out "$RUNNER_TEMP/ci-negatives.json" | tee "$RUNNER_TEMP/ci-negatives.txt"
+
+      # Verdicts and probe names only: no account ID, no bucket, no OU.
+      - name: Summarize
+        if: always()
+        run: |
+          {
+            echo "### orgseed-ci least-privilege proof"
+            echo '```'
+            cat "$RUNNER_TEMP/ci-negatives.txt" 2>/dev/null || echo "(no output: the proof did not run)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: always()
+        with:
+          name: ci-negatives
+          path: ${{ runner.temp }}/ci-negatives.json
+          retention-days: 7
+          if-no-files-found: warn
