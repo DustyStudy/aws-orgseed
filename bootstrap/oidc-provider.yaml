@@ -13,6 +13,33 @@ Parameters:
     Type: String
     Default: aws-orgseed
     Description: Repo name, used to scope the OIDC sub claim
+  SubjectFormat:
+    Type: String
+    Default: immutable
+    AllowedValues: [immutable, classic]
+    Description: >
+      Which `sub` claim format GitHub emits for this repo. `immutable`:
+      repo:<owner>@<owner-id>/<repo>@<repo-id>:<suffix> - the default for repos
+      created recently, and stronger (a renamed, deleted or re-created repo cannot
+      impersonate this one). `classic`: repo:<owner>/<repo>:<suffix>. Check yours
+      with: gh api repos/<owner>/<repo>/actions/oidc/customization/sub
+      (use_immutable_subject: true means immutable). Getting this wrong does not
+      error - the trust condition simply never matches and the hub role can never
+      be assumed - which is why immutable requires both IDs below.
+  GitHubOrgId:
+    Type: String
+    Default: ""
+    AllowedPattern: "^[0-9]*$"
+    Description: >
+      Numeric GitHub owner ID (required when SubjectFormat is immutable):
+      gh api repos/<owner>/<repo> -q .owner.id
+  GitHubRepoId:
+    Type: String
+    Default: ""
+    AllowedPattern: "^[0-9]*$"
+    Description: >
+      Numeric GitHub repository ID (required when SubjectFormat is immutable):
+      gh api repos/<owner>/<repo> -q .id
   AllowedRef:
     Type: String
     Default: "environment:orgseed"
@@ -24,8 +51,9 @@ Parameters:
       enough. Restrict that Environment to the main branch in repo settings.
       Use ref:refs/heads/main only if you accept that anyone who can push to
       main can seed every org. NOTE: a job that declares `environment:` presents
-      sub = repo:<org>/<repo>:environment:<name>, NOT the ref, so this value
-      and seed.yml's environment name must match.
+      sub = repo:<org>/<repo>:environment:<name> (or the immutable-ID form, see
+      SubjectFormat), NOT the ref, so this value and seed.yml's environment name
+      must match.
   ExistingOidcProviderArn:
     Type: String
     Default: ""
@@ -47,7 +75,23 @@ Parameters:
       as of 2023, but IAM still requires a value here; leave the default
       unless GitHub rotates their intermediate CA.
 
+Rules:
+  ImmutableSubjectNeedsIds:
+    RuleCondition: !Equals [!Ref SubjectFormat, immutable]
+    Assertions:
+      - Assert: !Not [!Equals [!Ref GitHubOrgId, ""]]
+        AssertDescription: >
+          SubjectFormat is immutable, so GitHubOrgId is required. Look it up with:
+          gh api repos/<owner>/<repo> -q .owner.id
+          (or set SubjectFormat=classic if the repo's use_immutable_subject is false)
+      - Assert: !Not [!Equals [!Ref GitHubRepoId, ""]]
+        AssertDescription: >
+          SubjectFormat is immutable, so GitHubRepoId is required. Look it up with:
+          gh api repos/<owner>/<repo> -q .id
+          (or set SubjectFormat=classic if the repo's use_immutable_subject is false)
+
 Conditions:
+  UseImmutableSubject: !Equals [!Ref SubjectFormat, immutable]
   CreateProvider: !Equals [!Ref ExistingOidcProviderArn, ""]
 
 Resources:
@@ -79,7 +123,10 @@ Resources:
               StringEquals:
                 token.actions.githubusercontent.com:aud: sts.amazonaws.com
               StringLike:
-                token.actions.githubusercontent.com:sub: !Sub "repo:${GitHubOrg}/${GitHubRepo}:${AllowedRef}"
+                token.actions.githubusercontent.com:sub: !If
+                  - UseImmutableSubject
+                  - !Sub "repo:${GitHubOrg}@${GitHubOrgId}/${GitHubRepo}@${GitHubRepoId}:${AllowedRef}"
+                  - !Sub "repo:${GitHubOrg}/${GitHubRepo}:${AllowedRef}"
       Policies:
         - PolicyName: assume-into-orgs
           PolicyDocument:

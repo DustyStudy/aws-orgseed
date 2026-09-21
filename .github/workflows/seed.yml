@@ -49,11 +49,22 @@ jobs:
           # workflow_dispatch input goes through the environment, never into
           # the script text - otherwise a crafted value is shell injection.
           ORG_INPUT: ${{ inputs.org }}
-          # Per-org ExternalIds. cli/orgs.yaml references these as
+          # The org config (account IDs, bucket names) can live in an `orgseed`
+          # Environment variable instead of the committed cli/orgs.yaml, so a real
+          # deployment's identifiers never have to be published. It goes through
+          # the environment into a file, never into the script text. Unset = fall
+          # back to the committed example config.
+          ORGSEED_CONFIG: ${{ vars.ORGSEED_CONFIG }}
+          # Per-org ExternalIds. The config references these as
           # `ci_trust_ref: "env:ORGSEED_TRUST_<ALIAS>"` so the values live in
           # GitHub Environment secrets, not in git. Add one line per org:
-          # ORGSEED_TRUST_ACME_COMMERCIAL: ${{ secrets.ORGSEED_TRUST_ACME_COMMERCIAL }}
+          # ORGSEED_TRUST_SANDBOX: ${{ secrets.ORGSEED_TRUST_SANDBOX }}
         run: |
-          args=(--config cli/orgs.yaml)
+          config=cli/orgs.yaml
+          if [ -n "$ORGSEED_CONFIG" ]; then
+            config="$RUNNER_TEMP/orgs.yaml"
+            printf '%s\n' "$ORGSEED_CONFIG" > "$config"
+          fi
+          args=(--config "$config")
           if [ -n "$ORG_INPUT" ]; then args+=(--org "$ORG_INPUT"); fi
           python cli/seed.py "${args[@]}"

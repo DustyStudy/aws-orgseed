@@ -105,6 +105,21 @@ examples/
    hold only one GitHub OIDC provider: if it already has one (another repo's
    bootstrap, an earlier setup), pass its ARN as `ExistingOidcProviderArn` and
    the stack reuses it instead of failing with `EntityAlreadyExists`.
+
+   **Check which `sub` format GitHub emits for your repo** - a mismatch does not
+   error, the hub role just can never be assumed:
+
+   ```
+   gh api repos/<owner>/<repo>/actions/oidc/customization/sub
+   ```
+
+   `use_immutable_subject: true` (the default for recently created repos) means
+   tokens carry `repo:<owner>@<owner-id>/<repo>@<repo-id>:...`. The template
+   defaults to that form and requires the two numeric IDs
+   (`gh api repos/<owner>/<repo> -q '.owner.id, .id'`) as `GitHubOrgId` /
+   `GitHubRepoId`; it refuses to deploy without them. Pinning exact IDs is
+   stricter than a `@*` wildcard: a renamed, deleted or re-created repo can't
+   impersonate this one. If yours is `false`, set `SubjectFormat=classic`.
 2. **GitHub Environment.** Create an Environment named **`orgseed`** in the repo
    (Settings -> Environments), add required reviewers, and restrict it to the
    `main` branch. The hub role trusts only `environment:orgseed` by default
@@ -116,7 +131,11 @@ examples/
    (`ORGSEED_TRUST_<ALIAS>`), and map it in `.github/workflows/seed.yml`.
 4. **Config.** Edit `cli/orgs.yaml` (see `examples/multi-org-example.yaml`).
    `ci_trust_ref` takes `env:NAME` so the value stays out of git; the shipped
-   `CHANGE-ME-*` placeholder is refused at run time.
+   `CHANGE-ME-*` placeholder is refused at run time. To keep real account IDs
+   and bucket names out of a public repo, put the whole config in an `orgseed`
+   Environment **variable** named `ORGSEED_CONFIG`: the seed workflow writes it
+   to a temp file and uses it instead of `cli/orgs.yaml`. (For a local
+   `--init`, point `--config` at a file outside the repo.)
 5. **First run per org.** In each target org's management account, use existing
    break-glass/admin credentials and run
    `python cli/seed.py --init <alias>` - the one manual step that can't be
