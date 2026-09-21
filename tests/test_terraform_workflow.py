@@ -110,6 +110,10 @@ def test_session_action_chains_hub_into_the_ci_role_with_the_external_id(action)
     assert len(creds) == 2, "one OIDC step (hub), one chained step (orgseed-ci)"
     chained = creds[1]["with"]
     assert chained["role-chaining"] is True
+    # By default the action attaches session tags (repo, actor, ...) via sts:TagSession.
+    # Neither the hub role nor orgseed-ci is granted it, and widening their trust for a
+    # feature nothing here uses would be the wrong fix - so tagging is skipped.
+    assert chained["role-skip-session-tagging"] is True
     assert chained["role-external-id"] == "${{ inputs.external-id }}"
     assert chained["role-to-assume"] == "${{ steps.render.outputs.ci_role_arn }}"
 

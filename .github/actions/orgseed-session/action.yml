@@ -58,5 +58,8 @@ runs:
         role-to-assume: ${{ steps.render.outputs.ci_role_arn }}
         role-chaining: true
         role-external-id: ${{ inputs.external-id }}
+        # Skip session tags: they need sts:TagSession, which neither the hub role nor
+        # orgseed-ci is granted - and nothing here uses session tags.
+        role-skip-session-tagging: true
         role-session-name: orgseed-terraform
         aws-region: ${{ steps.render.outputs.region }}
