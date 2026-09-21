@@ -124,18 +124,30 @@ examples/
    (Settings -> Environments), add required reviewers, and restrict it to the
    `main` branch. The hub role trusts only `environment:orgseed` by default
    (`AllowedRef`), so a push to `main` alone can't reach any org - the reviewer
-   approval is the gate. Set repo variable `ORGSEED_HUB_ROLE_ARN` from the
-   stack's `HubRoleArn` output.
+   approval is the gate. Set the `orgseed` Environment **secret** `ORGSEED_HUB_ROLE_ARN` from the
+   stack's `HubRoleArn` output (a secret, not a variable: the ARN contains the hub
+   account ID, and a step's inputs are printed in the run log - variables in the
+   clear, secrets masked).
 3. **ExternalIds.** For each org generate a unique random value
    (`openssl rand -hex 24`), store it as an `orgseed` Environment secret
    (`ORGSEED_TRUST_<ALIAS>`), and map it in `.github/workflows/seed.yml`.
 4. **Config.** Edit `cli/orgs.yaml` (see `examples/multi-org-example.yaml`).
    `ci_trust_ref` takes `env:NAME` so the value stays out of git; the shipped
    `CHANGE-ME-*` placeholder is refused at run time. To keep real account IDs
-   and bucket names out of a public repo, put the whole config in an `orgseed`
-   Environment **variable** named `ORGSEED_CONFIG`: the seed workflow writes it
-   to a temp file and uses it instead of `cli/orgs.yaml`. (For a local
-   `--init`, point `--config` at a file outside the repo.)
+   and bucket names out of a public repo, store the whole config as an `orgseed`
+   Environment **secret** named `ORGSEED_CONFIG`, base64-encoded:
+
+   ```
+   base64 -w0 my-orgs.yaml | gh secret set ORGSEED_CONFIG --env orgseed
+   ```
+
+   The seed workflow decodes it to a temp file and uses it instead of
+   `cli/orgs.yaml`, and masks the account IDs and bucket names before `seed.py`
+   can print them. A **secret, not a variable**: GitHub prints variables (and every
+   step's `env`) in the clear in run logs - visible to anyone if the repo is public -
+   but masks secrets. Base64 keeps it one line, because a multi-line secret is
+   masked line by line. (For a local `--init`, point `--config` at a file outside
+   the repo.)
 5. **First run per org.** In each target org's management account, use existing
    break-glass/admin credentials and run
    `python cli/seed.py --init <alias>` - the one manual step that can't be

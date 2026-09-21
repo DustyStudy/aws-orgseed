@@ -267,16 +267,44 @@ def test_seed_workflow_does_not_interpolate_inputs_into_the_shell(seed_workflow)
         assert "${{ inputs" not in step.get("run", ""), "workflow_dispatch inputs must go through env vars, not the script text"
 
 
-def test_seed_workflow_can_read_the_org_config_from_a_variable(seed_workflow):
-    """A real deployment's account IDs and bucket names shouldn't have to be
-    committed to a public repo. The config comes from the ORGSEED_CONFIG
-    environment variable when set, and falls back to the committed example."""
-    steps = seed_workflow["jobs"]["seed"]["steps"]
-    step = next(s for s in steps if s.get("name") == "Run seed.py")
-    assert step["env"]["ORGSEED_CONFIG"] == "${{ vars.ORGSEED_CONFIG }}"
+def _seed_step(seed_workflow):
+    return next(s for s in seed_workflow["jobs"]["seed"]["steps"] if s.get("name") == "Run seed.py")
+
+
+def test_seed_workflow_reads_the_org_config_from_a_secret_not_a_variable(seed_workflow):
+    """Real account IDs and bucket names must not be committed to a public repo,
+    and must not be printed into a public workflow log either. GitHub masks
+    *secrets* in logs but prints *variables* (and every step's env) in the clear,
+    so the config lives in a secret, stored base64 (a single line masks reliably,
+    where a multi-line value is masked line by line)."""
+    step = _seed_step(seed_workflow)
+    assert step["env"]["ORGSEED_CONFIG"] == "${{ secrets.ORGSEED_CONFIG }}"
     run = step["run"]
-    assert "ORGSEED_CONFIG" in run and "RUNNER_TEMP" in run
-    assert "cli/orgs.yaml" in run, "must still fall back to the committed config"
-    # the variable goes through the environment into a file - never interpolated into the script
-    assert "${{ vars.ORGSEED_CONFIG }}" not in run
+    assert "base64 -d" in run and "RUNNER_TEMP" in run
+    assert "cli/orgs.yaml" in run, "must still fall back to the committed example config"
+    # goes through the environment into a file - never interpolated into the script text
+    assert "${{ secrets" not in run and "${{ vars" not in run
+
+
+def test_seed_workflow_masks_identifiers_before_seed_py_can_print_them(seed_workflow):
+    """seed.py prints the management account ID; masking must precede it."""
+    run = _seed_step(seed_workflow)["run"]
+    assert "::add-mask::" in run
+    assert run.index("::add-mask::") < run.index("python cli/seed.py")
+
+
+def test_seed_workflow_trust_refs_come_from_secrets_only(seed_workflow):
+    env = _seed_step(seed_workflow)["env"]
+    refs = {k: v for k, v in env.items() if k.startswith("ORGSEED_TRUST_")}
+    assert refs, "at least one per-org ExternalId must actually be mapped, or seed.py refuses to run"
+    for name, value in refs.items():
+        assert value == "${{ secrets." + name + " }}", f"{name} must come from a secret, never a variable or literal"
+
+
+def test_seed_workflow_hub_role_arn_is_a_secret(seed_workflow):
+    """The hub role ARN contains the hub account ID, and a step's `with:` inputs
+    are printed in the log. As a variable it appears in the clear; as a secret it
+    is masked."""
+    step = next(s for s in seed_workflow["jobs"]["seed"]["steps"] if s.get("name", "").startswith("Configure AWS credentials"))
+    assert step["with"]["role-to-assume"] == "${{ secrets.ORGSEED_HUB_ROLE_ARN }}"
 
