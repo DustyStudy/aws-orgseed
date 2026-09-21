@@ -131,7 +131,11 @@ examples/
    (`ORGSEED_TRUST_<ALIAS>`), and map it in `.github/workflows/seed.yml`.
 4. **Config.** Edit `cli/orgs.yaml` (see `examples/multi-org-example.yaml`).
    `ci_trust_ref` takes `env:NAME` so the value stays out of git; the shipped
-   `CHANGE-ME-*` placeholder is refused at run time.
+   `CHANGE-ME-*` placeholder is refused at run time. To keep real account IDs
+   and bucket names out of a public repo, put the whole config in an `orgseed`
+   Environment **variable** named `ORGSEED_CONFIG`: the seed workflow writes it
+   to a temp file and uses it instead of `cli/orgs.yaml`. (For a local
+   `--init`, point `--config` at a file outside the repo.)
 5. **First run per org.** In each target org's management account, use existing
    break-glass/admin credentials and run
    `python cli/seed.py --init <alias>` - the one manual step that can't be

@@ -265,3 +265,18 @@ def test_seed_workflow_requires_an_environment(seed_workflow):
 def test_seed_workflow_does_not_interpolate_inputs_into_the_shell(seed_workflow):
     for step in seed_workflow["jobs"]["seed"]["steps"]:
         assert "${{ inputs" not in step.get("run", ""), "workflow_dispatch inputs must go through env vars, not the script text"
+
+
+def test_seed_workflow_can_read_the_org_config_from_a_variable(seed_workflow):
+    """A real deployment's account IDs and bucket names shouldn't have to be
+    committed to a public repo. The config comes from the ORGSEED_CONFIG
+    environment variable when set, and falls back to the committed example."""
+    steps = seed_workflow["jobs"]["seed"]["steps"]
+    step = next(s for s in steps if s.get("name") == "Run seed.py")
+    assert step["env"]["ORGSEED_CONFIG"] == "${{ vars.ORGSEED_CONFIG }}"
+    run = step["run"]
+    assert "ORGSEED_CONFIG" in run and "RUNNER_TEMP" in run
+    assert "cli/orgs.yaml" in run, "must still fall back to the committed config"
+    # the variable goes through the environment into a file - never interpolated into the script
+    assert "${{ vars.ORGSEED_CONFIG }}" not in run
+
