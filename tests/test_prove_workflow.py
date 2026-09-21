@@ -55,10 +55,14 @@ def test_it_runs_the_negatives_script_against_the_rendered_backend(wf):
 
 
 def test_a_failing_proof_fails_the_job(wf):
-    """A proof that can't fail proves nothing: no `|| true`, and pipefail keeps tee honest."""
+    """A proof that can't fail proves nothing. GitHub's DEFAULT shell for `run:` is
+    `bash -e`, which has NO pipefail - so `python ... | tee` reports tee's success even
+    when the script exits 1. The first real run printed RESULT: FAIL and went green. The step
+    must opt into pipefail explicitly (`shell: bash` does; so does `set -o pipefail`)."""
     prove = next(s for s in steps(wf) if s.get("name", "").startswith("Prove"))
     assert "|| true" not in prove["run"]
     assert "tee" in prove["run"]
+    assert prove.get("shell") == "bash" or "set -o pipefail" in prove["run"], "tee would swallow the script's exit status"
 
 
 def test_the_summary_is_written_even_when_the_proof_fails(wf):

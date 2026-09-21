@@ -12,9 +12,10 @@ It makes three kinds of call and checks each got the RIGHT kind of answer:
                     role's trust, touching the bootstrap stacks. Must hit an EXPLICIT deny
                     in an identity-based policy: the belt-and-braces statement that keeps
                     these closed even if the role's allow statements are ever broadened.
-  outside_scope     things the role was never granted (read EC2, list IAM users, other
-                    buckets, move accounts between OUs). Must fail because NO policy
-                    allows them - least privilege by omission.
+  outside_scope     things the role was never granted (read EC2, list IAM users, change
+                    the state bucket's policy, move accounts between OUs). Must fail because
+                    NO policy allows them - least privilege by omission. (Some services tell
+                    the caller only "no permission"; CloudTrail records IAM's own reason.)
   control           what the role IS for (read the org, read its state bucket). Must work,
                     so a broken session can't masquerade as "everything denied".
 
@@ -40,6 +41,7 @@ from botocore.exceptions import ClientError
 AUTHORIZED = "authorized"
 DENIED_EXPLICIT = "denied_explicit"  # explicit deny in an identity-based policy
 DENIED_IMPLICIT = "denied_implicit"  # no identity-based policy allows it
+DENIED_GENERIC = "denied_generic"    # denied, but the service told the CALLER too little to say which kind
 DENIED_OTHER = "denied_other"        # denied, but not by this role's own policies (e.g. an SCP)
 ERROR = "error"
 
@@ -52,7 +54,16 @@ NON_VERDICT_CODES = {
     "SignatureDoesNotMatch", "Throttling", "ThrottlingException", "RequestLimitExceeded", "ServiceUnavailable",
 }
 
-EXPECT = {"self_escalation": DENIED_EXPLICIT, "outside_scope": DENIED_IMPLICIT, "control": AUTHORIZED}
+# What each group must get. Self-escalation needs a CONFIRMED explicit deny. Outside-scope
+# accepts an implicit deny OR a terse one: some services (Organizations, sometimes S3) tell
+# the caller only "you don't have permissions" while IAM's own record in CloudTrail says
+# "because no identity-based policy allows ...". A terse denial can't be told from an
+# explicit one, so it never satisfies the self-escalation check.
+EXPECT = {
+    "self_escalation": {DENIED_EXPLICIT},
+    "outside_scope": {DENIED_IMPLICIT, DENIED_GENERIC},
+    "control": {AUTHORIZED},
+}
 
 
 def classify(exc):
@@ -65,11 +76,13 @@ def classify(exc):
     if code in NON_VERDICT_CODES:
         return ERROR
     if code in DENY_CODES:
+        if "service control policy" in message:
+            return DENIED_OTHER  # says nothing about this role's own policies
         if "explicit deny" in message and "identity-based policy" in message:
             return DENIED_EXPLICIT
         if "no identity-based policy allows" in message:
             return DENIED_IMPLICIT
-        return DENIED_OTHER
+        return DENIED_GENERIC
     return AUTHORIZED  # an error AFTER authorization (NoSuchEntity, MalformedPolicyDocument, ...) means it was allowed
 
 
@@ -107,8 +120,12 @@ def build_probes():
         Probe("describe_instances", "outside_scope", False, lambda s, c: s.client("ec2").describe_instances()),
         Probe("list_iam_users", "outside_scope", False, lambda s, c: s.client("iam").list_users()),
         Probe("list_all_buckets", "outside_scope", False, lambda s, c: s.client("s3").list_buckets()),
-        Probe("read_another_bucket", "outside_scope", False,
-              lambda s, c: s.client("s3").list_objects_v2(Bucket=f"{MARKER}-bucket", MaxKeys=1)),
+        # S3 answers NoSuchBucket for a nonexistent bucket BEFORE it checks permissions, so
+        # a probe against one reads as 'authorized' whatever the role may do (the first real
+        # run caught this). Use the EXISTING state bucket, with a malformed policy that S3
+        # rejects if the call were ever wrongly allowed.
+        Probe("change_state_bucket_policy", "outside_scope", True,
+              lambda s, c: s.client("s3").put_bucket_policy(Bucket=c["state_bucket"], Policy="{}")),
         Probe("delete_ou", "outside_scope", True,
               lambda s, c: s.client("organizations").delete_organizational_unit(OrganizationalUnitId="ou-nonexistent-00000000")),
         Probe("move_account", "outside_scope", True,
@@ -142,8 +159,8 @@ def evaluate(results):
             failures.append(f"{p.name}: no result")
             continue
         expected = EXPECT[p.group]
-        if results[p.name] != expected:
-            failures.append(f"{p.name}: expected {expected}, got {results[p.name]}")
+        if results[p.name] not in expected:
+            failures.append(f"{p.name}: expected {'/'.join(sorted(expected))}, got {results[p.name]}")
     return failures
 
 

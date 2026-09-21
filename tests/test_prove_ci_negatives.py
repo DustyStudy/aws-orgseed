@@ -41,6 +41,16 @@ def test_a_missing_allow_is_an_implicit_denial():
     assert pn.classify(err("UnauthorizedOperation", IMPLICIT)) == pn.DENIED_IMPLICIT
 
 
+@pytest.mark.parametrize("code,message", [
+    ("AccessDeniedException", "You don't have permissions to access this resource."),  # Organizations
+    ("AccessDenied", "Access Denied"),                                                  # S3 without detail
+])
+def test_a_terse_denial_is_generic_not_credited_as_explicit(code, message):
+    """Some services tell the CALLER less than IAM records in CloudTrail. It is still a
+    denial - but it can't be told apart from explicit, so it never satisfies the explicit check."""
+    assert pn.classify(err(code, message)) == pn.DENIED_GENERIC
+
+
 def test_an_scp_denial_is_neither_kind():
     """An SCP deny says nothing about this role's own policies."""
     assert pn.classify(err("AccessDenied", SCP)) == pn.DENIED_OTHER
@@ -65,8 +75,26 @@ def test_a_non_aws_error_is_an_error():
     assert pn.classify(ValueError("boom")) == pn.ERROR
 
 
+REPRESENTATIVE = {"self_escalation": pn.DENIED_EXPLICIT, "outside_scope": pn.DENIED_IMPLICIT, "control": pn.AUTHORIZED}
+
+
 def all_expected():
-    return {p.name: pn.EXPECT[p.group] for p in pn.build_probes()}
+    return {p.name: REPRESENTATIVE[p.group] for p in pn.build_probes()}
+
+
+def test_outside_scope_accepts_an_implicit_or_a_terse_denial_but_nothing_else():
+    r = all_expected()
+    r["move_account"] = pn.DENIED_GENERIC
+    assert pn.evaluate(r) == []
+    for wrong in (pn.AUTHORIZED, pn.DENIED_EXPLICIT, pn.DENIED_OTHER, pn.ERROR):
+        r["move_account"] = wrong
+        assert any(f.startswith("move_account") for f in pn.evaluate(r)), wrong
+
+
+def test_a_self_escalation_call_needs_a_CONFIRMED_explicit_deny_a_terse_one_is_not_enough():
+    r = all_expected()
+    r["put_own_inline_policy"] = pn.DENIED_GENERIC
+    assert any(f.startswith("put_own_inline_policy") for f in pn.evaluate(r))
 
 
 def test_everything_behaving_as_designed_passes():
@@ -107,6 +135,7 @@ NEVER = {
     "create_policy", "delete_policy", "delete_bucket", "delete_object", "put_object",
     "terminate_instances", "run_instances", "remove_account_from_organization", "close_account",
     "create_organizational_unit", "attach_policy", "detach_policy", "delete_account",
+    "delete_bucket_policy", "put_bucket_versioning", "put_bucket_acl",
 }
 
 
@@ -152,6 +181,7 @@ def test_the_guarded_mutating_calls_are_inert_even_if_wrongly_allowed():
     assert calls[("iam", "update_assume_role_policy")]["PolicyDocument"] == "{}", "malformed on purpose: IAM rejects it before applying"
     put = calls[("iam", "put_role_policy")]
     assert put["PolicyDocument"] == "{}" and marker in put["PolicyName"]
+    assert calls[("s3", "put_bucket_policy")]["Policy"] == "{}", "malformed on purpose: S3 rejects it before applying"
     assert marker in calls[("cloudformation", "update_stack")]["StackName"]
     assert marker in calls[("cloudformation", "delete_stack")]["StackName"]
     assert "nonexistent" in calls[("organizations", "delete_organizational_unit")]["OrganizationalUnitId"]
@@ -161,8 +191,17 @@ def test_the_guarded_mutating_calls_are_inert_even_if_wrongly_allowed():
 
 def test_the_mutating_probes_are_flagged_so_they_can_be_reviewed():
     mutating = {p.name for p in pn.build_probes() if p.mutating}
-    assert {"delete_own_inline_policy", "rewrite_admin_trust", "update_bootstrap_stack", "move_account"} <= mutating
+    assert {"delete_own_inline_policy", "rewrite_admin_trust", "update_bootstrap_stack", "move_account", "change_state_bucket_policy"} <= mutating
     assert not any(p.mutating for p in pn.build_probes() if p.group == "control")
+
+
+def test_no_probe_relies_on_a_bucket_that_does_not_exist():
+    """S3 answers NoSuchBucket for a nonexistent bucket BEFORE it checks permissions, so
+    such a probe reads as 'authorized' no matter what the role may do. (The first real run
+    caught exactly this.) Every S3 probe must target the state bucket, which exists."""
+    for service, method, kwargs in run_all_recorded():
+        if service == "s3" and "Bucket" in kwargs:
+            assert kwargs["Bucket"] == CTX["state_bucket"], f"s3.{method} must target the real state bucket"
 
 
 def test_probe_names_are_unique():
@@ -186,7 +225,7 @@ def test_main_reports_pass_and_writes_evidence_without_identifiers(tmp_path, mon
     hcl = tmp_path / "backend.hcl"
     hcl.write_text('bucket = "tfstate-secret-bucket"\n')
     out = tmp_path / "evidence.json"
-    by_name = {p.name: pn.EXPECT[p.group] for p in pn.build_probes()}
+    by_name = {p.name: REPRESENTATIVE[p.group] for p in pn.build_probes()}
     monkeypatch.setattr(pn, "run_probes", lambda session, ctx: dict(by_name))
     session = MagicMock()
     session.client.return_value.get_caller_identity.return_value = {"Account": "123456789012", "Arn": "arn:aws:sts::123456789012:assumed-role/orgseed-ci/s"}

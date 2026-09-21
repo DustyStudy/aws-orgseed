@@ -42,9 +42,12 @@ jobs:
           # One line per org: an Environment secret cannot be chosen dynamically.
           external-id: ${{ secrets.ORGSEED_TRUST_SANDBOX }}
 
-      # No `|| true`: a proof that cannot fail proves nothing. (pipefail is on, so tee
-      # does not swallow the script's exit status.)
+      # A proof that cannot fail proves nothing. GitHub's DEFAULT shell is `bash -e`, which has
+      # NO pipefail: `python ... | tee` would report tee's success even when the script exits
+      # 1 (the first real run printed RESULT: FAIL and went green). `shell: bash` turns
+      # pipefail on, so the script's exit status survives the pipe.
       - name: Prove orgseed-ci cannot escalate or stray
+        shell: bash
         run: |
           python cli/prove_ci_negatives.py \
             --backend-hcl stacks/baseline/backend.hcl \
