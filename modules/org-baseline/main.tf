@@ -13,7 +13,7 @@
 # (config:Put*/Describe*, sso:*/identitystore:* read-only) for when you do.
 
 terraform {
-  required_version = ">= 1.6"
+  required_version = ">= 1.10" # S3-native state locking (the generated backend.tf uses use_lockfile)
   required_providers {
     aws = {
       source  = "hashicorp/aws"

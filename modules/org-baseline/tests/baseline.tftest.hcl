@@ -80,7 +80,7 @@ run "trail_is_account_scoped_by_default" {
   command = plan
 
   assert {
-    condition     = aws_cloudtrail.baseline.is_organization_trail == false && aws_cloudtrail.baseline.is_multi_region_trail == true
+    condition     = aws_cloudtrail.baseline[0].is_organization_trail == false && aws_cloudtrail.baseline[0].is_multi_region_trail == true
     error_message = "Default trail must be multi-region, account-scoped (org trail is opt-in)."
   }
 }
@@ -93,7 +93,95 @@ run "org_trail_is_opt_in" {
   }
 
   assert {
-    condition     = aws_cloudtrail.baseline.is_organization_trail == true
+    condition     = aws_cloudtrail.baseline[0].is_organization_trail == true
     error_message = "is_organization_trail should reach the trail."
   }
 }
+
+# --- Phase 1: the SCP must be usable on its own, and safe to point somewhere ---------
+
+run "scp_only_needs_no_cloudtrail_dependencies" {
+  command = plan
+
+  variables {
+    create_cloudtrail              = false
+    cloudtrail_log_bucket          = null
+    cloudtrail_kms_key_arn         = null
+    cloudtrail_sns_topic_name      = null
+    cloudtrail_log_group_arn       = null
+    cloudtrail_cloudwatch_role_arn = null
+  }
+
+  assert {
+    condition     = length(aws_cloudtrail.baseline) == 0
+    error_message = "create_cloudtrail = false must create no trail (the five supporting resources need not exist)."
+  }
+
+  assert {
+    condition     = output.cloudtrail_arn == null
+    error_message = "cloudtrail_arn should be null when no trail is created."
+  }
+}
+
+run "cloudtrail_stays_the_default" {
+  command = plan
+
+  assert {
+    condition     = length(aws_cloudtrail.baseline) == 1
+    error_message = "Existing behaviour must not change: the trail is created unless turned off."
+  }
+}
+
+run "trail_requires_all_five_dependencies_when_enabled" {
+  command = plan
+
+  variables {
+    cloudtrail_kms_key_arn = null
+  }
+
+  expect_failures = [var.create_cloudtrail]
+}
+
+run "refuses_the_org_root_by_default" {
+  command = plan
+
+  variables {
+    scp_target_id = "r-abcd"
+  }
+
+  expect_failures = [var.scp_target_id]
+}
+
+run "root_is_possible_only_when_explicitly_allowed" {
+  command = plan
+
+  variables {
+    scp_target_id     = "r-abcd"
+    allow_root_target = true
+  }
+
+  assert {
+    condition     = aws_organizations_policy_attachment.baseline.target_id == "r-abcd"
+    error_message = "allow_root_target = true should permit attaching to the root."
+  }
+}
+
+run "rejects_a_target_that_is_neither_ou_nor_root" {
+  command = plan
+
+  variables {
+    scp_target_id = "123456789012"
+  }
+
+  expect_failures = [var.scp_target_id]
+}
+
+run "outputs_list_what_the_scp_enforces" {
+  command = plan
+
+  assert {
+    condition     = output.scp_statement_sids == tolist(["DenyDisablingCloudTrail", "DenyDisablingConfig", "DenyLeaveOrganization", "DenyRootUserActions", "RequireImdsv2OnLaunch"])
+    error_message = "The output should list exactly the five guardrails."
+  }
+}
+
