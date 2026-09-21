@@ -196,6 +196,13 @@ def assume_role(sts_client, role_arn: str, session_name: str, external_id: str |
     )
 
 
+def backend_key(alias: str) -> str:
+    """S3 key of an org's Terraform state. Shared by seed.py (backend.tf) and
+    stack_inputs.py (backend.hcl): if the two ever disagreed, Terraform would
+    quietly start a new, empty state."""
+    return f"orgseed/{alias}/terraform.tfstate"
+
+
 def write_backend_tf(alias: str, org: dict):
     out_dir = OUTPUT_DIR / alias
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -204,7 +211,7 @@ def write_backend_tf(alias: str, org: dict):
         'terraform {',
         '  backend "s3" {',
         f'    bucket = "{org["state_bucket"]}"',
-        f'    key    = "orgseed/{alias}/terraform.tfstate"',
+        f'    key    = "{backend_key(alias)}"',
         f'    region = "{region}"',
     ]
     if org.get("use_lock_table") and org.get("lock_table"):
