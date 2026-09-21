@@ -139,9 +139,17 @@ jobs:
         run: terraform -chdir=stacks/baseline apply -input=false tfplan
 
       - name: Summarize
+        env:
+          ACTION: ${{ inputs.action }}
         run: |
           {
-            echo "### Applied"
-            echo 'SCP enforces:'
-            terraform -chdir=stacks/baseline output -json scp_statement_sids || true
+            if [ "$ACTION" = "destroy" ]; then
+              # After a destroy there are no outputs left to read.
+              echo "### Destroyed"
+              echo "The baseline SCP and its attachment were removed."
+            else
+              echo "### Applied"
+              echo "SCP enforces:"
+              terraform -chdir=stacks/baseline output -json scp_statement_sids
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
