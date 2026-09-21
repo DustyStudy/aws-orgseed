@@ -51,6 +51,21 @@ variable "cloudtrail_cloudwatch_role_arn" {
   description = "ARN of the existing IAM role CloudTrail assumes to write to cloudtrail_log_group_arn -- must match role/orgseed-cwl-delivery-* (see bootstrap/org-seeding-role.yaml)"
 }
 
+variable "is_organization_trail" {
+  type        = bool
+  default     = false
+  description = <<-EOT
+    false (default): the trail records only THIS account's events - the
+    management account's own activity. It does not cover member accounts.
+    true: an organization trail that records every member account too. It needs,
+    beforehand and outside this module: CloudTrail trusted access enabled for the
+    org (organizations:EnableAWSServiceAccess for cloudtrail.amazonaws.com), the
+    log bucket policy allowing delivery under the org ID path, and the
+    TerraformCI role granted the extra permissions organization trails require.
+    Left off by default because turning it on without those fails at apply.
+  EOT
+}
+
 # checkov's CKV2_AWS_10 (CloudWatch Logs integration) is suppressed for this
 # resource in .checkov.yaml at the repo root, not with an inline comment --
 # CKV2_AWS_10 is a graph check, and graph checks don't honor inline
@@ -64,6 +79,7 @@ resource "aws_cloudtrail" "baseline" {
   cloud_watch_logs_group_arn    = var.cloudtrail_log_group_arn
   cloud_watch_logs_role_arn     = var.cloudtrail_cloudwatch_role_arn
   is_multi_region_trail         = true
+  is_organization_trail         = var.is_organization_trail
   include_global_service_events = true
   enable_log_file_validation    = true
 

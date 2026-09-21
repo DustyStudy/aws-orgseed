@@ -276,3 +276,88 @@ def test_write_backend_tf_uses_dynamodb_when_configured(tmp_path, monkeypatch):
     content = (tmp_path / "acme-commercial" / "backend.tf").read_text()
     assert 'dynamodb_table = "tflock-acme"' in content
     assert "use_lockfile" not in content
+
+
+# ---------------------------------------------------------------------------
+# resolve_trust_ref
+# ---------------------------------------------------------------------------
+
+def test_resolve_trust_ref_returns_a_literal_value():
+    assert seed.resolve_trust_ref(_valid_org(ci_trust_ref="s3cr3t-random")) == "s3cr3t-random"
+
+
+def test_resolve_trust_ref_reads_env_indirection(monkeypatch):
+    monkeypatch.setenv("ORGSEED_TRUST_ACME", "from-the-environment")
+    assert seed.resolve_trust_ref(_valid_org(ci_trust_ref="env:ORGSEED_TRUST_ACME")) == "from-the-environment"
+
+
+def test_resolve_trust_ref_fails_when_env_var_is_unset(monkeypatch):
+    monkeypatch.delenv("ORGSEED_TRUST_ACME", raising=False)
+    with pytest.raises(ValueError, match="ORGSEED_TRUST_ACME.*not set"):
+        seed.resolve_trust_ref(_valid_org(ci_trust_ref="env:ORGSEED_TRUST_ACME"))
+
+
+def test_resolve_trust_ref_fails_when_env_var_is_empty(monkeypatch):
+    monkeypatch.setenv("ORGSEED_TRUST_ACME", "")
+    with pytest.raises(ValueError, match="not set"):
+        seed.resolve_trust_ref(_valid_org(ci_trust_ref="env:ORGSEED_TRUST_ACME"))
+
+
+def test_resolve_trust_ref_refuses_the_shipped_placeholder():
+    with pytest.raises(ValueError, match="placeholder"):
+        seed.resolve_trust_ref(_valid_org(ci_trust_ref="CHANGE-ME-acme-commercial"))
+
+
+def test_resolve_trust_ref_refuses_a_placeholder_supplied_via_env(monkeypatch):
+    monkeypatch.setenv("ORGSEED_TRUST_ACME", "CHANGE-ME-acme-commercial")
+    with pytest.raises(ValueError, match="placeholder"):
+        seed.resolve_trust_ref(_valid_org(ci_trust_ref="env:ORGSEED_TRUST_ACME"))
+
+
+def test_bootstrap_org_passes_the_resolved_external_id(monkeypatch, tmp_path):
+    """The stack's CiTrustRef parameter must be the resolved secret, not the
+    literal 'env:NAME' indirection string."""
+    monkeypatch.setenv("ORGSEED_TRUST_ACME", "resolved-value")
+    monkeypatch.setattr(seed, "OUTPUT_DIR", tmp_path)
+    deployed = []
+    monkeypatch.setattr(seed, "deploy_stack", lambda cfn, stack_name, template_path, params: deployed.append((stack_name, params)))
+    session = MagicMock()
+
+    org = _valid_org(ci_trust_ref="env:ORGSEED_TRUST_ACME")
+    org["_hub_role_arn"] = "arn:aws:iam::111111111111:role/orgseed-hub"
+    seed.bootstrap_org(session, "acme-commercial", org)
+
+    roles_params = next(p for name, p in deployed if name.startswith("orgseed-roles-"))
+    assert roles_params["CiTrustRef"] == "resolved-value"
+
+
+# ---------------------------------------------------------------------------
+# deploy_stack error handling
+# ---------------------------------------------------------------------------
+
+def test_deploy_stack_does_not_mistake_access_denied_for_a_missing_stack(tmp_path):
+    """Previously ANY ClientError from describe_stacks meant 'create it', so an
+    AccessDenied surfaced later as a confusing AlreadyExists."""
+    cfn = _fake_cfn_client()
+    cfn.describe_stacks.side_effect = FakeClientError("AccessDenied: not authorized to perform cloudformation:DescribeStacks")
+    template = tmp_path / "t.yaml"
+    template.write_text("AWSTemplateFormatVersion: '2010-09-09'\n")
+
+    with pytest.raises(FakeClientError, match="AccessDenied"):
+        seed.deploy_stack(cfn, "orgseed-roles-acme", template, {})
+
+    cfn.create_stack.assert_not_called()
+
+
+@pytest.mark.parametrize("status", ["ROLLBACK_COMPLETE", "CREATE_FAILED", "DELETE_FAILED"])
+def test_deploy_stack_explains_an_unupdatable_stack(tmp_path, status):
+    cfn = _fake_cfn_client()
+    cfn.describe_stacks.return_value = {"Stacks": [{"StackName": "orgseed-roles-acme", "StackStatus": status}]}
+    template = tmp_path / "t.yaml"
+    template.write_text("AWSTemplateFormatVersion: '2010-09-09'\n")
+
+    with pytest.raises(RuntimeError, match=status):
+        seed.deploy_stack(cfn, "orgseed-roles-acme", template, {})
+
+    cfn.update_stack.assert_not_called()
+    cfn.create_stack.assert_not_called()

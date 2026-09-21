@@ -12,9 +12,24 @@ permissions:
   id-token: write   # required for OIDC -- do not add contents: write here
   contents: read
 
+# One seed run at a time: two concurrent CloudFormation updates of the same
+# stacks would race.
+concurrency:
+  group: orgseed
+  cancel-in-progress: false
+
 jobs:
   seed:
     runs-on: ubuntu-latest
+    # THE approval gate. OrgSeedAdmin can rewrite its own IAM role, so whoever
+    # can run this job can, in effect, administer every org's management
+    # account. Configure this GitHub Environment with required reviewers and
+    # restrict it to the main branch (Settings -> Environments -> orgseed).
+    #
+    # The name matters: a job with `environment:` presents an OIDC subject of
+    # repo:<org>/<repo>:environment:orgseed, which is what oidc-provider.yaml's
+    # AllowedRef trusts by default. Renaming this means updating that stack.
+    environment: orgseed
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
@@ -30,9 +45,15 @@ jobs:
       - run: pip install -r cli/requirements.txt
 
       - name: Run seed.py
+        env:
+          # workflow_dispatch input goes through the environment, never into
+          # the script text - otherwise a crafted value is shell injection.
+          ORG_INPUT: ${{ inputs.org }}
+          # Per-org ExternalIds. cli/orgs.yaml references these as
+          # `ci_trust_ref: "env:ORGSEED_TRUST_<ALIAS>"` so the values live in
+          # GitHub Environment secrets, not in git. Add one line per org:
+          # ORGSEED_TRUST_ACME_COMMERCIAL: ${{ secrets.ORGSEED_TRUST_ACME_COMMERCIAL }}
         run: |
-          if [ -n "${{ inputs.org }}" ]; then
-            python cli/seed.py --config cli/orgs.yaml --org "${{ inputs.org }}"
-          else
-            python cli/seed.py --config cli/orgs.yaml
-          fi
+          args=(--config cli/orgs.yaml)
+          if [ -n "$ORG_INPUT" ]; then args+=(--org "$ORG_INPUT"); fi
+          python cli/seed.py "${args[@]}"

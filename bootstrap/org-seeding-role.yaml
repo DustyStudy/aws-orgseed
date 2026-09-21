@@ -57,6 +57,13 @@ Parameters:
       AllowedRef parameter.
     NoEcho: true
 
+Conditions:
+  # Organizations is a global service. Its API endpoint - and therefore the
+  # aws:RequestedRegion the IAM engine sees for its calls - is us-east-1 in the
+  # commercial partition and us-gov-west-1 in GovCloud, regardless of which
+  # region this stack was deployed to.
+  IsGovPartition: !Equals [!Ref "AWS::Partition", aws-us-gov]
+
 Resources:
   # Bootstrap + re-seed only. Can create/update the bootstrap CFN stacks
   # (this stack and state-backend.yaml) -- nothing else. Not used for any
@@ -200,6 +207,17 @@ Resources:
                 Resource:
                   - !Sub "arn:${AWS::Partition}:s3:::tfstate-*"
                   - !Sub "arn:${AWS::Partition}:s3:::tfstate-*/*"
+              # S3-native locking (use_lockfile = true, the generated backend.tf
+              # default) writes <state-key>.tflock and DELETES it on unlock.
+              # Without this, the lock is never released and every later run is
+              # blocked. Limited to lock files - deleting state itself is not
+              # something CI needs (the bucket is versioned regardless).
+              - Sid: StateLockRelease
+                Effect: Allow
+                Action:
+                  - s3:DeleteObject
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:s3:::tfstate-*/*.tflock"
               - Sid: LockTableAccess
                 Effect: Allow
                 Action:
@@ -247,13 +265,26 @@ Resources:
                 Resource: "*"
                 Condition:
                   StringEquals:
-                    aws:RequestedRegion: !Ref "AWS::Region"
+                    # Not !Ref AWS::Region: see the IsGovPartition condition.
+                    aws:RequestedRegion: !If [IsGovPartition, us-gov-west-1, us-east-1]
               - Sid: CloudTrailReadOnly
                 Effect: Allow
                 Action:
                   - cloudtrail:DescribeTrails
                   - cloudtrail:GetTrailStatus
                 Resource: "*"
+              # What the aws_cloudtrail resource reads on every refresh, beyond
+              # DescribeTrails/GetTrailStatus above. Missing, the first apply can
+              # succeed and the second plan fails with AccessDenied.
+              - Sid: CloudTrailTrailReads
+                Effect: Allow
+                Action:
+                  - cloudtrail:GetTrail
+                  - cloudtrail:GetEventSelectors
+                  - cloudtrail:GetInsightSelectors
+                  - cloudtrail:ListTags
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:cloudtrail:*:${AWS::AccountId}:trail/orgseed-*"
               - Sid: CloudTrailTrailManagement
                 Effect: Allow
                 Action:
@@ -261,6 +292,9 @@ Resources:
                   - cloudtrail:UpdateTrail
                   - cloudtrail:PutEventSelectors
                   - cloudtrail:StartLogging
+                  # provider default_tags make CreateTrail carry tags
+                  - cloudtrail:AddTags
+                  - cloudtrail:RemoveTags
                 Resource:
                   - !Sub "arn:${AWS::Partition}:cloudtrail:*:${AWS::AccountId}:trail/orgseed-*"
               # Lets modules/org-baseline enable CloudTrail's CloudWatch Logs

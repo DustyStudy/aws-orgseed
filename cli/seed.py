@@ -29,6 +29,7 @@ Either mode writes cli/output/<alias>/backend.tf so Terraform in modules/
 can be pointed at the right state location.
 """
 import argparse
+import os
 import pathlib
 import sys
 
@@ -94,6 +95,40 @@ def validate_config(config: dict) -> None:
             )
 
 
+ENV_PREFIX = "env:"
+PLACEHOLDER_PREFIX = "CHANGE-ME"
+
+# Stack states from which CloudFormation cannot update in place.
+UNUPDATABLE_STATES = {"ROLLBACK_COMPLETE", "CREATE_FAILED", "DELETE_FAILED", "DELETE_COMPLETE"}
+
+
+def resolve_trust_ref(org: dict) -> str:
+    """Return the org's sts:ExternalId.
+
+    `ci_trust_ref` may be a literal, or `env:NAME` to read it from an
+    environment variable - which is how it stays out of git (CI supplies it
+    from a GitHub Environment secret; see .github/workflows/seed.yml). Refuses
+    the shipped CHANGE-ME placeholder: seeding an org with a guessable
+    ExternalId would defeat the confused-deputy protection it exists for.
+    """
+    raw = str(org["ci_trust_ref"])
+    if raw.startswith(ENV_PREFIX):
+        name = raw[len(ENV_PREFIX):]
+        value = os.environ.get(name, "")
+        if not value:
+            raise ValueError(
+                f"org '{org['alias']}': ci_trust_ref points at environment variable {name}, which is not set"
+            )
+    else:
+        value = raw
+    if value.startswith(PLACEHOLDER_PREFIX):
+        raise ValueError(
+            f"org '{org['alias']}': ci_trust_ref is still the placeholder {value!r}. "
+            "Generate a unique random value per org and supply it via env:NAME."
+        )
+    return value
+
+
 def partition_arn(account_id: str, partition: str, role_name: str) -> str:
     return f"arn:{partition}:iam::{account_id}:role/{role_name}"
 
@@ -105,11 +140,22 @@ def deploy_stack(cfn_client, stack_name: str, template_path: pathlib.Path, param
 
     parameters = [{"ParameterKey": k, "ParameterValue": str(v)} for k, v in params.items()]
 
+    exists = False
     try:
-        cfn_client.describe_stacks(StackName=stack_name)
+        described = cfn_client.describe_stacks(StackName=stack_name)
         exists = True
-    except cfn_client.exceptions.ClientError:
-        exists = False
+        status = (described.get("Stacks") or [{}])[0].get("StackStatus")
+        if status in UNUPDATABLE_STATES:
+            raise RuntimeError(
+                f"{stack_name} is in state {status}, which CloudFormation cannot update in place. "
+                "Delete the failed stack (its state bucket is retained) and re-run."
+            )
+    except cfn_client.exceptions.ClientError as e:
+        # Only "no such stack" means "create it". AccessDenied, throttling, a
+        # bad region etc. used to be swallowed here and surface later as a
+        # confusing AlreadyExists from create_stack.
+        if "does not exist" not in str(e):
+            raise
 
     common = {
         "StackName": stack_name,
@@ -184,7 +230,7 @@ def bootstrap_org(session: boto3.Session, alias: str, org: dict):
             "OrgAlias": alias,
             "SeedingAdminRoleName": org["seeding_admin_role_name"],
             "TerraformCiRoleName": org["ci_role_name"],
-            "CiTrustRef": org["ci_trust_ref"],
+            "CiTrustRef": resolve_trust_ref(org),
         },
     )
     deploy_stack(
@@ -244,7 +290,7 @@ def main():
             sts,
             seeding_admin_arn,
             session_name=f"orgseed-{alias}",
-            external_id=org["ci_trust_ref"],
+            external_id=resolve_trust_ref(org),
         )
         bootstrap_org(org_session, alias, org)
 

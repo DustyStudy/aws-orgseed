@@ -15,10 +15,27 @@ Parameters:
     Description: Repo name, used to scope the OIDC sub claim
   AllowedRef:
     Type: String
-    Default: "ref:refs/heads/main"
+    Default: "environment:orgseed"
     Description: >
-      Scopes which branch/environment may assume the hub role, e.g.
-      ref:refs/heads/main or environment:prod
+      The GitHub OIDC subject suffix allowed to assume the hub role. The
+      default trusts only jobs that run in the "orgseed" GitHub Environment
+      (seed.yml does), so reaching org-management admin needs the
+      Environment's required-reviewer approval - a push to main alone is not
+      enough. Restrict that Environment to the main branch in repo settings.
+      Use ref:refs/heads/main only if you accept that anyone who can push to
+      main can seed every org. NOTE: a job that declares `environment:` presents
+      sub = repo:<org>/<repo>:environment:<name>, NOT the ref, so this value
+      and seed.yml's environment name must match.
+  ExistingOidcProviderArn:
+    Type: String
+    Default: ""
+    Description: >
+      An account can hold only ONE IAM OIDC provider per issuer URL. If this
+      account already has one for https://token.actions.githubusercontent.com
+      (another repo's bootstrap, an earlier setup), paste its ARN here and this
+      stack will reuse it instead of failing with EntityAlreadyExists. The
+      existing provider must list sts.amazonaws.com as an allowed audience.
+      Leave empty to create the provider.
   HubRoleName:
     Type: String
     Default: orgseed-hub
@@ -30,9 +47,13 @@ Parameters:
       as of 2023, but IAM still requires a value here; leave the default
       unless GitHub rotates their intermediate CA.
 
+Conditions:
+  CreateProvider: !Equals [!Ref ExistingOidcProviderArn, ""]
+
 Resources:
   GitHubOidcProvider:
     Type: AWS::IAM::OIDCProvider
+    Condition: CreateProvider
     Properties:
       Url: https://token.actions.githubusercontent.com
       ClientIdList:
@@ -52,7 +73,7 @@ Resources:
         Statement:
           - Effect: Allow
             Principal:
-              Federated: !GetAtt GitHubOidcProvider.Arn
+              Federated: !If [CreateProvider, !GetAtt GitHubOidcProvider.Arn, !Ref ExistingOidcProviderArn]
             Action: sts:AssumeRoleWithWebIdentity
             Condition:
               StringEquals:
@@ -76,4 +97,5 @@ Outputs:
     Description: Paste this ARN into cli/orgs.yaml as hub_role_arn
     Value: !GetAtt HubSeederRole.Arn
   OidcProviderArn:
-    Value: !GetAtt GitHubOidcProvider.Arn
+    Description: The provider the hub role trusts (created here, or the one you supplied)
+    Value: !If [CreateProvider, !GetAtt GitHubOidcProvider.Arn, !Ref ExistingOidcProviderArn]
