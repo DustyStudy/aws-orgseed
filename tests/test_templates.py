@@ -149,6 +149,51 @@ def test_hub_trust_is_pinned_to_the_seed_environment_by_default():
 
 
 # ---------------------------------------------------------------------------
+# Hub trust: GitHub's immutable OIDC subject format
+# ---------------------------------------------------------------------------
+# GitHub can emit `sub` as repo:OWNER@OWNER_ID/REPO@REPO_ID:<suffix> (the
+# `use_immutable_subject` repo setting - true for every repo created recently).
+# A trust condition written for the classic repo:OWNER/REPO:<suffix> form then
+# never matches, and the hub role can never be assumed from GitHub Actions.
+
+def _hub_sub_condition(t):
+    doc = t["Resources"]["HubSeederRole"]["Properties"]["AssumeRolePolicyDocument"]
+    return doc["Statement"][0]["Condition"]["StringLike"]["token.actions.githubusercontent.com:sub"]
+
+
+def test_hub_trust_defaults_to_the_immutable_subject_format():
+    t = load_template("oidc-provider.yaml")
+    assert t["Parameters"]["SubjectFormat"]["Default"] == "immutable"
+    assert set(t["Parameters"]["SubjectFormat"]["AllowedValues"]) == {"immutable", "classic"}
+    cond = _hub_sub_condition(t)
+    assert "Fn::If" in cond, "trust must branch on the subject format"
+    branch, immutable, classic = cond["Fn::If"]
+    assert branch == "UseImmutableSubject"
+    assert immutable["Fn::Sub"] == "repo:${GitHubOrg}@${GitHubOrgId}/${GitHubRepo}@${GitHubRepoId}:${AllowedRef}"
+    assert classic["Fn::Sub"] == "repo:${GitHubOrg}/${GitHubRepo}:${AllowedRef}"
+
+
+def test_hub_trust_pins_exact_ids_not_a_wildcard():
+    """Owner/repo IDs are immutable, so a renamed, deleted or re-created repo
+    cannot impersonate this one. Do not weaken to `@*`."""
+    cond = _hub_sub_condition(load_template("oidc-provider.yaml"))
+    assert "@*" not in str(cond)
+
+
+def test_immutable_format_requires_both_ids_at_stack_creation():
+    """Fail fast with instructions rather than deploying a trust that silently
+    never matches."""
+    t = load_template("oidc-provider.yaml")
+    assert t["Parameters"]["GitHubOrgId"]["Default"] == ""
+    assert t["Parameters"]["GitHubRepoId"]["Default"] == ""
+    assert t["Parameters"]["GitHubOrgId"]["AllowedPattern"] == "^[0-9]*$"
+    rule = next(iter(t["Rules"].values()))
+    assert rule["RuleCondition"] == {"Fn::Equals": [{"Ref": "SubjectFormat"}, "immutable"]}
+    messages = " ".join(a["AssertDescription"] for a in rule["Assertions"])
+    assert "gh api" in messages, "the error should say how to look the IDs up"
+
+
+# ---------------------------------------------------------------------------
 # State backend safety
 # ---------------------------------------------------------------------------
 

@@ -105,6 +105,21 @@ examples/
    hold only one GitHub OIDC provider: if it already has one (another repo's
    bootstrap, an earlier setup), pass its ARN as `ExistingOidcProviderArn` and
    the stack reuses it instead of failing with `EntityAlreadyExists`.
+
+   **Check which `sub` format GitHub emits for your repo** - a mismatch does not
+   error, the hub role just can never be assumed:
+
+   ```
+   gh api repos/<owner>/<repo>/actions/oidc/customization/sub
+   ```
+
+   `use_immutable_subject: true` (the default for recently created repos) means
+   tokens carry `repo:<owner>@<owner-id>/<repo>@<repo-id>:...`. The template
+   defaults to that form and requires the two numeric IDs
+   (`gh api repos/<owner>/<repo> -q '.owner.id, .id'`) as `GitHubOrgId` /
+   `GitHubRepoId`; it refuses to deploy without them. Pinning exact IDs is
+   stricter than a `@*` wildcard: a renamed, deleted or re-created repo can't
+   impersonate this one. If yours is `false`, set `SubjectFormat=classic`.
 2. **GitHub Environment.** Create an Environment named **`orgseed`** in the repo
    (Settings -> Environments), add required reviewers, and restrict it to the
    `main` branch. The hub role trusts only `environment:orgseed` by default
