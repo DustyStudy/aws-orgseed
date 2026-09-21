@@ -1,0 +1,68 @@
+[
+  {
+    "time": "2026-09-21T23:22:01Z",
+    "event": "AttachRolePolicy",
+    "error": "AccessDenied",
+    "iam_reason": "explicit deny in an identity-based policy"
+  },
+  {
+    "time": "2026-09-21T23:22:01Z",
+    "event": "PutRolePolicy",
+    "error": "AccessDenied",
+    "iam_reason": "explicit deny in an identity-based policy"
+  },
+  {
+    "time": "2026-09-21T23:22:01Z",
+    "event": "UpdateAssumeRolePolicy",
+    "error": "AccessDenied",
+    "iam_reason": "explicit deny in an identity-based policy"
+  },
+  {
+    "time": "2026-09-21T23:22:01Z",
+    "event": "DeleteRolePolicy",
+    "error": "AccessDenied",
+    "iam_reason": "explicit deny in an identity-based policy"
+  },
+  {
+    "time": "2026-09-21T23:22:02Z",
+    "event": "UpdateStack",
+    "error": "AccessDenied",
+    "iam_reason": "explicit deny in an identity-based policy"
+  },
+  {
+    "time": "2026-09-21T23:22:02Z",
+    "event": "DeleteStack",
+    "error": "AccessDenied",
+    "iam_reason": "explicit deny in an identity-based policy"
+  },
+  {
+    "time": "2026-09-21T23:22:02Z",
+    "event": "DescribeInstances",
+    "error": "Client.UnauthorizedOperation",
+    "iam_reason": "no identity-based policy allows"
+  },
+  {
+    "time": "2026-09-21T23:22:02Z",
+    "event": "ListUsers",
+    "error": "AccessDenied",
+    "iam_reason": "no identity-based policy allows"
+  },
+  {
+    "time": "2026-09-21T23:22:03Z",
+    "event": "MoveAccount",
+    "error": "AccessDenied",
+    "iam_reason": "no identity-based policy allows"
+  },
+  {
+    "time": "2026-09-21T23:22:03Z",
+    "event": "PutBucketPolicy",
+    "error": "AccessDenied",
+    "iam_reason": "no identity-based policy allows"
+  },
+  {
+    "time": "2026-09-21T23:22:03Z",
+    "event": "DeleteOrganizationalUnit",
+    "error": "AccessDenied",
+    "iam_reason": "no identity-based policy allows"
+  }
+]

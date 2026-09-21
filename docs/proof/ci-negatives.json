@@ -1,0 +1,24 @@
+{
+  "time": "2026-09-21T23:22:04.374123+00:00",
+  "role": "orgseed-ci",
+  "results": {
+    "delete_own_inline_policy": "denied_explicit",
+    "detach_own_policy": "denied_explicit",
+    "attach_policy_to_admin_role": "denied_explicit",
+    "rewrite_admin_trust": "denied_explicit",
+    "put_own_inline_policy": "denied_explicit",
+    "update_bootstrap_stack": "denied_explicit",
+    "delete_bootstrap_stack": "denied_explicit",
+    "describe_instances": "denied_implicit",
+    "list_iam_users": "denied_implicit",
+    "list_all_buckets": "denied_implicit",
+    "change_state_bucket_policy": "denied_implicit",
+    "delete_ou": "denied_generic",
+    "move_account": "denied_generic",
+    "whoami": "authorized",
+    "describe_organization": "authorized",
+    "list_scps": "authorized",
+    "read_state_bucket": "authorized"
+  },
+  "failures": []
+}

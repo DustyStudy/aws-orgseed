@@ -1,0 +1,78 @@
+{
+  "generated": "2026-09-21T23:08:51.385627+00:00",
+  "note": "account IDs omitted; times are UTC",
+  "guardrail_changes": [
+    {
+      "time": "2026-09-21T22:51:16Z",
+      "event": "CreatePolicy",
+      "principal": "assumed-role/orgseed-ci/orgseed-terraform",
+      "error": "none"
+    },
+    {
+      "time": "2026-09-21T22:51:17Z",
+      "event": "AttachPolicy",
+      "principal": "assumed-role/orgseed-ci/orgseed-terraform",
+      "error": "none"
+    },
+    {
+      "time": "2026-09-21T22:57:12Z",
+      "event": "DetachPolicy",
+      "principal": "assumed-role/orgseed-ci/orgseed-terraform",
+      "error": "none"
+    },
+    {
+      "time": "2026-09-21T22:57:12Z",
+      "event": "DeletePolicy",
+      "principal": "assumed-role/orgseed-ci/orgseed-terraform",
+      "error": "none"
+    }
+  ],
+  "assume_orgseed_ci": [
+    {
+      "time": "2026-09-21T22:48:12Z",
+      "assumed": "orgseed-ci",
+      "session": "orgseed-terraform",
+      "externalId_supplied": true,
+      "error": "none"
+    },
+    {
+      "time": "2026-09-21T22:50:15Z",
+      "assumed": "orgseed-ci",
+      "session": "orgseed-terraform",
+      "externalId_supplied": true,
+      "error": "none"
+    },
+    {
+      "time": "2026-09-21T22:51:02Z",
+      "assumed": "orgseed-ci",
+      "session": "orgseed-terraform",
+      "externalId_supplied": true,
+      "error": "none"
+    },
+    {
+      "time": "2026-09-21T22:55:57Z",
+      "assumed": "orgseed-ci",
+      "session": "orgseed-terraform",
+      "externalId_supplied": true,
+      "error": "none"
+    },
+    {
+      "time": "2026-09-21T22:56:58Z",
+      "assumed": "orgseed-ci",
+      "session": "orgseed-terraform",
+      "externalId_supplied": true,
+      "error": "none"
+    }
+  ],
+  "github_to_hub": {
+    "count": 8,
+    "subjects": [
+      "repo:DustyStudy@42273218/aws-orgseed@1355246533:environment:orgseed"
+    ],
+    "errors": [
+      "none"
+    ],
+    "first": "2026-09-21T21:49:14Z",
+    "last": "2026-09-21T22:56:57Z"
+  }
+}
