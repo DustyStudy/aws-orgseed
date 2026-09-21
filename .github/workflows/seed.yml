@@ -49,21 +49,38 @@ jobs:
           # workflow_dispatch input goes through the environment, never into
           # the script text - otherwise a crafted value is shell injection.
           ORG_INPUT: ${{ inputs.org }}
-          # The org config (account IDs, bucket names) can live in an `orgseed`
-          # Environment variable instead of the committed cli/orgs.yaml, so a real
-          # deployment's identifiers never have to be published. It goes through
-          # the environment into a file, never into the script text. Unset = fall
-          # back to the committed example config.
-          ORGSEED_CONFIG: ${{ vars.ORGSEED_CONFIG }}
+          # The org config (account IDs, bucket names) lives in an `orgseed`
+          # Environment SECRET, not in the committed cli/orgs.yaml and not in a
+          # variable: this repo is public, and GitHub prints variables (and every
+          # step's env) in the clear in run logs but masks secrets. Stored base64
+          # so it is one line - a multi-line secret is masked line by line, which
+          # is unreliable. Create it with:
+          #   base64 -w0 my-orgs.yaml | gh secret set ORGSEED_CONFIG --env orgseed
+          # It goes through the environment into a file, never into the script
+          # text. Unset = fall back to the committed example config.
+          ORGSEED_CONFIG: ${{ secrets.ORGSEED_CONFIG }}
           # Per-org ExternalIds. The config references these as
-          # `ci_trust_ref: "env:ORGSEED_TRUST_<ALIAS>"` so the values live in
-          # GitHub Environment secrets, not in git. Add one line per org:
-          # ORGSEED_TRUST_SANDBOX: ${{ secrets.ORGSEED_TRUST_SANDBOX }}
+          # `ci_trust_ref: "env:ORGSEED_TRUST_<ALIAS>"`, so the values live in
+          # Environment secrets, not in git. Map one line per org:
+          ORGSEED_TRUST_SANDBOX: ${{ secrets.ORGSEED_TRUST_SANDBOX }}
         run: |
           config=cli/orgs.yaml
           if [ -n "$ORGSEED_CONFIG" ]; then
             config="$RUNNER_TEMP/orgs.yaml"
-            printf '%s\n' "$ORGSEED_CONFIG" > "$config"
+            printf '%s' "$ORGSEED_CONFIG" | base64 -d > "$config"
+            # Mask the identifiers BEFORE anything can print them: seed.py logs the
+            # management account ID, and a masked secret does not mask the values
+            # parsed out of it.
+            python3 - "$config" <<'PYMASK'
+          import sys, yaml
+          cfg = yaml.safe_load(open(sys.argv[1]))
+          values = [cfg.get("hub_account_id")]
+          for org in cfg.get("orgs", []):
+              values += [org.get("management_account_id"), org.get("state_bucket")]
+          for v in values:
+              if v:
+                  print(f"::add-mask::{v}")
+          PYMASK
           fi
           args=(--config "$config")
           if [ -n "$ORG_INPUT" ]; then args+=(--org "$ORG_INPUT"); fi
