@@ -83,21 +83,70 @@ bootstrap/                  CloudFormation — solves the chicken-and-egg proble
   org-seeding-role.yaml       deployed per target org (OrgSeedAdmin + TerraformCI)
   state-backend.yaml          per-org S3 state bucket + DynamoDB lock table
 modules/                     Terraform, used after bootstrap
-  org-baseline/                baseline SCP + CloudTrail; Config/Identity Center: TODO
+  org-baseline/                baseline SCP + optional CloudTrail; Config/Identity Center: TODO
   ci-role/                     scaffold for migrating the TerraformCI trust policy to Terraform
+stacks/
+  baseline/                    Phase 1 root stack: the SCP, on ONE OU (never the root)
 cli/
   seed.py                     orchestrates bootstrap across every org in orgs.yaml
+  stack_inputs.py              renders the Phase 1 stack's backend + tfvars from the (secret) org config
   orgs.yaml                    declarative org list (accounts, regions, partitions)
   requirements.txt             runtime deps
   requirements-dev.txt         test-only deps (pytest)
 tests/
   test_seed.py                 unit tests for seed.py (config validation, stack deploy logic, ExternalId)
+  test_stack_inputs.py         the rendered backend/tfvars, masking, and state-key agreement with seed.py
+  test_templates.py            structural tests for the bootstrap templates and the seed workflow
+  test_terraform_workflow.py   pins the controls of the terraform workflow (two approvals, encrypted plan, ...)
 examples/
   multi-org-example.yaml
-.github/workflows/
-  validate.yml                 cfn-lint, checkov, tflint, ruff, bandit, pytest
-  seed.yml                      workflow_dispatch: runs cli/seed.py via OIDC
+.github/
+  workflows/
+    validate.yml               cfn-lint, checkov, tflint, ruff, bandit, pytest, terraform test
+    seed.yml                    workflow_dispatch: runs cli/seed.py via OIDC (bootstrap stacks)
+    terraform.yml               workflow_dispatch: plan / apply / destroy the Phase 1 stack via OIDC -> hub -> orgseed-ci
+  actions/orgseed-session/     composite action: mask + render inputs, then chain hub -> orgseed-ci
 ```
+
+## Phase 1: applying the guardrail SCP
+
+`stacks/baseline` applies `modules/org-baseline`'s SCP to **one OU**, as the
+`orgseed-ci` role, from the `terraform` workflow. It is deliberately incapable of
+targeting the organization root (an SCP on the root hits every member account at
+once, and only the management account can undo it) and of creating a CloudTrail
+trail (that needs five resources provisioned elsewhere).
+
+Add a `baseline:` block to the org's entry in the config (the base64 secret):
+
+```yaml
+orgs:
+  - alias: sandbox
+    ...
+    baseline:
+      scp_target_id: ou-xxxx-xxxxxxxx   # required - an OU, never r-xxxx
+      enforce_imdsv2: true              # optional; stage off if you have legacy launches
+```
+
+Secrets in the `orgseed` Environment (the workflow needs, beyond `seed.yml`'s):
+`ORGSEED_PLAN_KEY` - a random key that encrypts the plan between jobs
+(`openssl rand -base64 36 | gh secret set ORGSEED_PLAN_KEY --env orgseed`).
+
+Run **Actions -> terraform**, choosing the org alias and an action:
+
+| action | what happens |
+|---|---|
+| `plan` | one approval, read-only: prints what would change (counts and resource addresses) |
+| `apply` | plan -> **you review it** -> second approval -> applies *that plan file* |
+| `destroy` | the same, for a destroy plan |
+
+Two approvals is deliberate: the first lets a plan run, the second lets you apply
+after reading it. The plan is passed between jobs **encrypted** (artifacts on a
+public repo are downloadable by any signed-in GitHub user, and a plan embeds the OU
+ID), and the apply job runs `terraform apply <planfile>`, never `-auto-approve`, so
+it does exactly what was reviewed and refuses if state moved in between.
+
+A shared, throwaway OU with a dedicated test account is the intended way to see the
+SCP enforce before pointing it anywhere that matters.
 
 ## Quickstart
 

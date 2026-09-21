@@ -26,28 +26,55 @@
 # iam:PassRole statement allows. Provision the role once under that name,
 # following AWS's standard CloudTrail-to-CloudWatch-Logs trust policy.
 
+variable "create_cloudtrail" {
+  type        = bool
+  default     = true
+  description = <<-EOT
+    Create the baseline trail. The trail needs five resources that must already
+    exist (log bucket, KMS key, SNS topic, CloudWatch Logs group + delivery role -
+    see above), so set false to apply the SCP on its own. When true, all five
+    cloudtrail_* variables are required.
+  EOT
+
+  validation {
+    condition = !var.create_cloudtrail || alltrue([
+      var.cloudtrail_log_bucket != null,
+      var.cloudtrail_kms_key_arn != null,
+      var.cloudtrail_sns_topic_name != null,
+      var.cloudtrail_log_group_arn != null,
+      var.cloudtrail_cloudwatch_role_arn != null,
+    ])
+    error_message = "create_cloudtrail is true, so cloudtrail_log_bucket, cloudtrail_kms_key_arn, cloudtrail_sns_topic_name, cloudtrail_log_group_arn and cloudtrail_cloudwatch_role_arn are all required (or set create_cloudtrail = false to apply the SCP on its own)."
+  }
+}
+
 variable "cloudtrail_log_bucket" {
   type        = string
+  default     = null
   description = "Name of an existing S3 bucket, already policy-configured to accept CloudTrail log delivery, to send this org's trail to"
 }
 
 variable "cloudtrail_kms_key_arn" {
   type        = string
+  default     = null
   description = "ARN of an existing KMS CMK used to encrypt this trail's log files at rest"
 }
 
 variable "cloudtrail_sns_topic_name" {
   type        = string
+  default     = null
   description = "Name of an existing SNS topic, already policy-configured to accept CloudTrail notifications, to notify on each log file delivery"
 }
 
 variable "cloudtrail_log_group_arn" {
   type        = string
+  default     = null
   description = "ARN of an existing CloudWatch Logs log group (include the trailing :* wildcard AWS expects) to stream this trail's events to"
 }
 
 variable "cloudtrail_cloudwatch_role_arn" {
   type        = string
+  default     = null
   description = "ARN of the existing IAM role CloudTrail assumes to write to cloudtrail_log_group_arn -- must match role/orgseed-cwl-delivery-* (see bootstrap/org-seeding-role.yaml)"
 }
 
@@ -72,6 +99,8 @@ variable "is_organization_trail" {
 # #checkov:skip= comments. See .checkov.yaml for why this is a checkov
 # resolution limitation and not an actual missing control.
 resource "aws_cloudtrail" "baseline" {
+  count = var.create_cloudtrail ? 1 : 0
+
   name                          = "orgseed-${var.org_alias}"
   s3_bucket_name                = var.cloudtrail_log_bucket
   kms_key_id                    = var.cloudtrail_kms_key_arn

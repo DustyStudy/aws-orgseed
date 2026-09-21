@@ -14,5 +14,11 @@ output "scp_policy_id" {
 }
 
 output "cloudtrail_arn" {
-  value = aws_cloudtrail.baseline.arn
+  value = try(aws_cloudtrail.baseline[0].arn, null)
 }
+
+output "scp_statement_sids" {
+  description = "The Sids of the statements in the baseline SCP - what it actually enforces. Used by the Phase 1 proof report."
+  value       = sort([for s in data.aws_iam_policy_document.scp_baseline.statement : s.sid])
+}
+

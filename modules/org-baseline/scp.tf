@@ -14,7 +14,18 @@
 
 variable "scp_target_id" {
   type        = string
-  description = "Root or OU ID to attach the baseline SCP to (e.g. r-xxxx or ou-xxxx-xxxxxxxx)"
+  description = "OU ID to attach the baseline SCP to (ou-xxxx-xxxxxxxx). The org root (r-xxxx) is refused unless allow_root_target is true: an SCP on the root applies to every member account at once."
+
+  validation {
+    condition     = can(regex("^ou-[0-9a-z]{4,32}-[0-9a-z]{8,32}$", var.scp_target_id)) || (var.allow_root_target && can(regex("^r-[0-9a-z]{4,32}$", var.scp_target_id)))
+    error_message = "scp_target_id must be an OU ID (ou-xxxx-xxxxxxxx). The org root (r-xxxx) is only accepted when allow_root_target = true."
+  }
+}
+
+variable "allow_root_target" {
+  type        = bool
+  default     = false
+  description = "Permit scp_target_id to be the organization root. Off by default: trial on an OU first - a Deny SCP that is too broad locks people out, and only the management account can undo it."
 }
 
 variable "ci_role_name" {

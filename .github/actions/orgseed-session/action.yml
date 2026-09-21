@@ -1,0 +1,62 @@
+name: orgseed session
+description: >
+  Render the Phase 1 stack's inputs from the masked org config (masking every
+  identifier first), then chain GitHub OIDC -> orgseed-hub -> orgseed-ci so the
+  caller's steps run as the guardrail role. No long-lived credentials anywhere.
+
+inputs:
+  config:
+    description: The org config, base64-encoded (an Environment secret).
+    required: true
+  org:
+    description: Org alias from the config.
+    required: true
+  hub-role-arn:
+    description: ARN of the hub role (an Environment secret - it contains the hub account ID).
+    required: true
+  external-id:
+    description: The org's sts:ExternalId (an Environment secret).
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+      with:
+        python-version: "3.12"
+
+    - name: Install dependencies
+      shell: bash
+      run: pip install -r cli/requirements.txt
+
+    # Everything the config holds (account IDs, bucket, OU) is masked here, before
+    # any later step can print it. Values arrive through env, never script text.
+    - id: render
+      name: Render stack inputs
+      shell: bash
+      env:
+        ORGSEED_CONFIG: ${{ inputs.config }}
+        ORG: ${{ inputs.org }}
+      run: |
+        config="$RUNNER_TEMP/orgs.yaml"
+        printf '%s' "$ORGSEED_CONFIG" | base64 -d > "$config"
+        python cli/stack_inputs.py --config "$config" --org "$ORG" --stack-dir stacks/baseline
+
+    # 1) GitHub's OIDC token -> the hub role. Only a job in the `orgseed`
+    #    environment presents the subject the hub trusts.
+    - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6
+      with:
+        role-to-assume: ${{ inputs.hub-role-arn }}
+        aws-region: us-east-1
+        role-session-name: orgseed-hub-terraform
+
+    # 2) hub -> the org's guardrail role, with the per-org ExternalId. Never the
+    #    bootstrap admin role: guardrail changes must not be able to rewrite the
+    #    roles that manage them.
+    - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6
+      with:
+        role-to-assume: ${{ steps.render.outputs.ci_role_arn }}
+        role-chaining: true
+        role-external-id: ${{ inputs.external-id }}
+        role-session-name: orgseed-terraform
+        aws-region: ${{ steps.render.outputs.region }}
