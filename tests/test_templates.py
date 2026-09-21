@@ -299,3 +299,12 @@ def test_seed_workflow_trust_refs_come_from_secrets_only(seed_workflow):
     assert refs, "at least one per-org ExternalId must actually be mapped, or seed.py refuses to run"
     for name, value in refs.items():
         assert value == "${{ secrets." + name + " }}", f"{name} must come from a secret, never a variable or literal"
+
+
+def test_seed_workflow_hub_role_arn_is_a_secret(seed_workflow):
+    """The hub role ARN contains the hub account ID, and a step's `with:` inputs
+    are printed in the log. As a variable it appears in the clear; as a secret it
+    is masked."""
+    step = next(s for s in seed_workflow["jobs"]["seed"]["steps"] if s.get("name", "").startswith("Configure AWS credentials"))
+    assert step["with"]["role-to-assume"] == "${{ secrets.ORGSEED_HUB_ROLE_ARN }}"
+

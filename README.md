@@ -124,8 +124,10 @@ examples/
    (Settings -> Environments), add required reviewers, and restrict it to the
    `main` branch. The hub role trusts only `environment:orgseed` by default
    (`AllowedRef`), so a push to `main` alone can't reach any org - the reviewer
-   approval is the gate. Set repo variable `ORGSEED_HUB_ROLE_ARN` from the
-   stack's `HubRoleArn` output.
+   approval is the gate. Set the `orgseed` Environment **secret** `ORGSEED_HUB_ROLE_ARN` from the
+   stack's `HubRoleArn` output (a secret, not a variable: the ARN contains the hub
+   account ID, and a step's inputs are printed in the run log - variables in the
+   clear, secrets masked).
 3. **ExternalIds.** For each org generate a unique random value
    (`openssl rand -hex 24`), store it as an `orgseed` Environment secret
    (`ORGSEED_TRUST_<ALIAS>`), and map it in `.github/workflows/seed.yml`.
