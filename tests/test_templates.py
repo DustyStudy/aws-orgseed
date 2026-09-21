@@ -159,6 +159,16 @@ def test_state_bucket_survives_stack_deletion_and_replacement():
     assert bucket["UpdateReplacePolicy"] == "Retain"
 
 
+def test_every_stateful_resource_states_its_deletion_policy():
+    """cfn-lint I3011: leaving DeletionPolicy/UpdateReplacePolicy to the default
+    (Delete) should be a decision, not an omission."""
+    t = load_template("state-backend.yaml")
+    for name in ("StateBucket", "LockTable"):
+        res = t["Resources"][name]
+        assert "DeletionPolicy" in res and "UpdateReplacePolicy" in res, f"{name} must state both policies explicitly"
+    assert t["Resources"]["LockTable"]["DeletionPolicy"] == "Delete", "lock records are transient; only the state bucket is retained"
+
+
 # ---------------------------------------------------------------------------
 # Terraform baseline
 # ---------------------------------------------------------------------------
